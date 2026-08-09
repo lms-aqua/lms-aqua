@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LostCam</string>
+    <string name="channel_name">LostCam streaming</string>
+    <string name="notification_title">LostCam is streaming</string>
+</resources>

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0d1117" />
+<title>LostCam Sender</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --line: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #7c3aed;
+    --ok: #2ea043;
+    --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  #dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--muted); flex: none;
+  }
+  #dot.live { background: var(--ok); box-shadow: 0 0 0 4px rgba(46,160,67,.18); }
+  #dot.error { background: var(--bad); box-shadow: 0 0 0 4px rgba(248,81,73,.18); }
+  main { flex: 1; position: relative; background: #000; overflow: hidden; }
+  video {
+    width: 100%; height: 100%; object-fit: contain;
+    display: block; background: #000;
+  }
+  #status {
+    position: absolute; inset: auto 12px 12px 12px;
+    background: rgba(13,17,23,.82);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 12px; font-size: 13px;
+    backdrop-filter: blur(8px);
+  }
+  #status b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  footer {
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    padding: 12px 16px 16px;
+    display: grid; gap: 10px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  label { font-size: 13px; color: var(--muted); }
+  select, button {
+    font: inherit; color: var(--text);
+    background: #21262d; border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 12px;
+  }
+  button {
+    flex: 1; min-width: 130px; font-weight: 620;
+    background: var(--accent); border-color: transparent;
+  }
+  button.secondary { background: #21262d; border-color: var(--line); flex: 0 0 auto; }
+  button:disabled { opacity: .5; }
+  #error {
+    display: none; color: #ffb4ae; background: rgba(248,81,73,.12);
+    border: 1px solid rgba(248,81,73,.4); border-radius: 8px; padding: 10px 12px;
+    font-size: 13px; white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot" aria-hidden="true"></span>
+  <h1>LostCam Sender</h1>
+</header>
+
+<main>
+  <video id="preview" playsinline autoplay muted></video>
+  <div id="status">Idle — tap <b>Start streaming</b></div>
+</main>
+
+<footer>
+  <div id="error" role="alert"></div>
+  <div class="row">
+    <label for="camera">Camera</label>
+    <select id="camera"></select>
+    <label for="quality">Quality</label>
+    <select id="quality">
+      <option value="1280x720">720p</option>
+      <option value="1920x1080">1080p</option>
+      <option value="640x480">480p (low bandwidth)</option>
+    </select>
+    <label for="fps">FPS</label>
+    <select id="fps">
+      <option value="30" selected>30</option>
+      <option value="24">24</option>
+      <option value="15">15</option>
+    </select>
+  </div>
+  <div class="row">
+    <button id="toggle">Start streaming</button>
+    <button id="swap" class="secondary" title="Switch camera">Flip</button>
+  </div>
+</footer>
+
+<script>
+"use strict";
+(function () {
+  const els = {
+    dot: document.getElementById("dot"),
+    video: document.getElementById("preview"),
+    status: document.getElementById("status"),
+    error: document.getElementById("error"),
+    camera: document.getElementById("camera"),
+    quality: document.getElementById("quality"),
+    fps: document.getElementById("fps"),
+    toggle: document.getElementById("toggle"),
+    swap: document.getElementById("swap"),
+  };
+
+  const token = new URLSearchParams(location.search).get("token");
+  const state = {
+    streaming: false,
+    stream: null,
+    socket: null,
+    canvas: document.createElement("canvas"),
+    ctx: null,
+    facing: "environment",
+    sent: 0,
+    bytes: 0,
+    inflight: false,
+    timer: null,
+    statsTimer: null,
+    lastSent: 0,
+    lastAt: 0,
+    quality: 0.6,
+  };
+  state.ctx = state.canvas.getContext("2d", { alpha: false });
+
+  function setDot(kind) { els.dot.className = kind || ""; }
+
+  function showError(message) {
+    els.error.textContent = message;
+    els.error.style.display = "block";
+    setDot("error");
+  }
+  function clearError() {
+    els.error.style.display = "none";
+    els.error.textContent = "";
+  }
+
+  // getUserMedia only exists in a secure context. On a LAN IP over plain HTTP
+  // it is simply absent, which looks like a broken page unless we say so.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError(
+      "This browser will not expose the camera here.\n\n" +
+      (location.protocol !== "https:"
+        ? "The page was loaded over " + location.protocol +
+          " — camera access needs HTTPS. Start the desktop client without " +
+          "--no-tls and open the https:// URL it prints."
+        : "navigator.mediaDevices is unavailable. Try Chrome (Android) or Safari (iOS).")
+    );
+    els.toggle.disabled = true;
+    els.swap.disabled = true;
+  }
+
+  async function listCameras() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === "videoinput");
+      els.camera.innerHTML = "";
+      const auto = document.createElement("option");
+      auto.value = "";
+      auto.textContent = "Automatic";
+      els.camera.appendChild(auto);
+      cams.forEach((cam, i) => {
+        const option = document.createElement("option");
+        option.value = cam.deviceId;
+        // Labels are empty until permission is granted at least once.
+        option.textContent = cam.label || "Camera " + (i + 1);
+        els.camera.appendChild(option);
+      });
+    } catch (err) {
+      /* enumeration is a convenience; failure is not fatal */
+    }
+  }
+
+  function selectedSize() {
+    const [w, h] = els.quality.value.split("x").map(Number);
+    return { width: w, height: h };
+  }
+
+  async function openCamera() {
+    const size = selectedSize();
+    const deviceId = els.camera.value;
+    const video = {
+      width: { ideal: size.width },
+      height: { ideal: size.height },
+      frameRate: { ideal: Number(els.fps.value) },
+    };
+    if (deviceId) video.deviceId = { exact: deviceId };
+    else video.facingMode = { ideal: state.facing };
+
+    stopTracks();
+    state.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    els.video.srcObject = state.stream;
+    await els.video.play().catch(() => {});
+    await listCameras();
+  }
+
+  function stopTracks() {
+    if (state.stream) {
+      state.stream.getTracks().forEach((t) => t.stop());
+      state.stream = null;
+    }
+  }
+
+  function wsUrl() {
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    let url = scheme + "//" + location.host + "/ws";
+    if (token) url += "?token=" + encodeURIComponent(token);
+    return url;
+  }
+
+  function connect() {
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(wsUrl());
+      socket.binaryType = "arraybuffer";
+      const failed = () => reject(new Error("Could not reach the desktop client."));
+      socket.addEventListener("open", () => {
+        const track = state.stream && state.stream.getVideoTracks()[0];
+        const settings = track ? track.getSettings() : {};
+        socket.send(JSON.stringify({
+          type: "hello",
+          width: settings.width || selectedSize().width,
+          height: settings.height || selectedSize().height,
+          fps: Number(els.fps.value),
+          device: navigator.userAgent.slice(0, 120),
+        }));
+        resolve(socket);
+      });
+      socket.addEventListener("error", failed);
+      socket.addEventListener("close", () => {
+        if (state.streaming) stop("Connection to the desktop client closed.");
+      });
+      socket.addEventListener("message", (event) => {
+        if (typeof event.data !== "string") return;
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "config") {
+            if (msg.fps) restartTimer(Number(msg.fps));
+            if (msg.quality) state.quality = Math.min(1, Math.max(0.1, msg.quality / 100));
+          }
+        } catch (err) { /* ignore malformed control frames */ }
+      });
+      state.socket = socket;
+    });
+  }
+
+  function captureFrame() {
+    // Skip if the previous encode is still running or the socket is backed up.
+    // Dropping a frame beats building a queue the viewer would see as lag.
+    if (state.inflight) return;
+    const socket = state.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (socket.bufferedAmount > 2 * 1024 * 1024) return;
+
+    const video = els.video;
+    if (!video.videoWidth || !video.videoHeight) return;
+    if (state.canvas.width !== video.videoWidth) {
+      state.canvas.width = video.videoWidth;
+      state.canvas.height = video.videoHeight;
+    }
+    state.inflight = true;
+    state.ctx.drawImage(video, 0, 0, state.canvas.width, state.canvas.height);
+    state.canvas.toBlob(
+      (blob) => {
+        if (!blob) { state.inflight = false; return; }
+        blob.arrayBuffer().then((buf) => {
+          state.inflight = false;
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(buf);
+            state.sent += 1;
+            state.bytes += buf.byteLength;
+          }
+        }).catch(() => { state.inflight = false; });
+      },
+      "image/jpeg",
+      state.quality
+    );
+  }
+
+  function restartTimer(fps) {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = setInterval(captureFrame, Math.max(10, Math.round(1000 / fps)));
+  }
+
+  function updateStats() {
+    const now = performance.now();
+    const seconds = (now - state.lastAt) / 1000;
+    const fps = seconds > 0 ? (state.sent - state.lastSent) / seconds : 0;
+    state.lastSent = state.sent;
+    state.lastAt = now;
+    const mbit = state.bytes * 8 / 1e6;
+    els.status.innerHTML =
+      "Live &middot; <b>" + fps.toFixed(1) + "</b> fps &middot; " +
+      state.canvas.width + "x" + state.canvas.height + " &middot; sent <b>" +
+      state.sent + "</b> frames (" + mbit.toFixed(1) + " Mb)";
+  }
+
+  async function start() {
+    clearError();
+    els.toggle.disabled = true;
+    try {
+      els.status.textContent = "Requesting camera…";
+      await openCamera();
+      els.status.textContent = "Connecting to the desktop client…";
+      await connect();
+
+      state.streaming = true;
+      state.sent = 0;
+      state.bytes = 0;
+      state.lastSent = 0;
+      state.lastAt = performance.now();
+      restartTimer(Number(els.fps.value));
+      state.statsTimer = setInterval(updateStats, 1000);
+      els.toggle.textContent = "Stop streaming";
+      setDot("live");
+
+      // Best effort: keep the screen on so the OS does not suspend capture.
+      if ("wakeLock" in navigator) {
+        try { state.wakeLock = await navigator.wakeLock.request("screen"); }
+        catch (err) { /* not critical */ }
+      }
+    } catch (err) {
+      stopTracks();
+      const name = err && err.name;
+      if (name === "NotAllowedError") {
+        showError("Camera permission was denied. Allow camera access for this site and try again.");
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        showError("No camera matched that request. Try a lower quality setting or the Automatic camera.");
+      } else {
+        showError((err && err.message) || String(err));
+      }
+      els.status.textContent = "Idle";
+    } finally {
+      els.toggle.disabled = false;
+    }
+  }
+
+  function stop(reason) {
+    state.streaming = false;
+    if (state.timer) { clearInterval(state.timer); state.timer = null; }
+    if (state.statsTimer) { clearInterval(state.statsTimer); state.statsTimer = null; }
+    if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+      try { state.socket.send(JSON.stringify({ type: "bye" })); } catch (err) {}
+      state.socket.close();
+    }
+    state.socket = null;
+    stopTracks();
+    if (state.wakeLock) { try { state.wakeLock.release(); } catch (err) {} state.wakeLock = null; }
+    els.toggle.textContent = "Start streaming";
+    setDot("");
+    els.status.textContent = reason || "Stopped";
+    if (reason) showError(reason);
+  }
+
+  els.toggle.addEventListener("click", () => (state.streaming ? stop() : start()));
+  els.swap.addEventListener("click", async () => {
+    state.facing = state.facing === "environment" ? "user" : "environment";
+    els.camera.value = "";
+    if (state.streaming) {
+      try { await openCamera(); } catch (err) { showError(String(err)); }
+    }
+  });
+  [els.quality, els.fps, els.camera].forEach((el) =>
+    el.addEventListener("change", async () => {
+      if (!state.streaming) return;
+      try {
+        await openCamera();
+        restartTimer(Number(els.fps.value));
+      } catch (err) { showError(String(err)); }
+    })
+  );
+
+  // iOS interrupts capture when the page is hidden; report it rather than
+  // silently sending a frozen frame.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.streaming) {
+      els.status.textContent = "Paused — the browser was backgrounded. Return to this tab.";
+    }
+  });
+
+  listCameras();
+})();
+</script>
+</body>
+</html>

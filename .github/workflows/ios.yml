@@ -1,0 +1,136 @@
+name: iOS app
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Test and build an unsigned IPA
+    runs-on: macos-14
+
+    defaults:
+      run:
+        working-directory: ios
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        # The .xcodeproj is generated from project.yml rather than committed, so
+        # there is nothing to drift and no pbxproj merge conflicts.
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Pick a simulator
+        id: simulator
+        # Runner images change which simulators they ship, so the destination is
+        # discovered rather than hardcoded to a name that will rot.
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          NAME=$(xcrun simctl list devices available --json \
+            | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)['devices']
+          best = None
+          for runtime, devices in data.items():
+              if 'iOS' not in runtime:
+                  continue
+              for device in devices:
+                  if not device.get('isAvailable'):
+                      continue
+                  name = device['name']
+                  if name.startswith('iPhone'):
+                      # Prefer a plain iPhone over an SE/Plus/Pro Max variant.
+                      score = len(name)
+                      if best is None or score < best[0]:
+                          best = (score, name)
+          print(best[1] if best else '')
+          ")
+          if [ -z "$NAME" ]; then
+            echo "No iOS simulator available on this runner" >&2
+            exit 1
+          fi
+          echo "Using simulator: $NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project LostCam.xcodeproj \
+            -scheme LostCam \
+            -destination "platform=iOS Simulator,name=${{ steps.simulator.outputs.name }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Build for device (unsigned)
+        # Signing is disabled entirely: a CI build needs no signing identity, and
+        # keeping secrets out of the workflow is worth more than a signed artifact.
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project LostCam.xcodeproj \
+            -scheme LostCam \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM="" \
+            ENABLE_HARDENED_RUNTIME=NO
+
+      - name: Package the IPA
+        # An IPA is just a zip with the .app inside a Payload/ directory.
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 \
+            -name "*.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app was produced by the build" >&2
+            find build/Build/Products -maxdepth 3 >&2 || true
+            exit 1
+          fi
+          echo "Packaging $APP_PATH"
+          rm -rf payload && mkdir -p payload/Payload
+          cp -R "$APP_PATH" payload/Payload/
+          (cd payload && zip -qry ../LostCam-unsigned.ipa Payload)
+          ls -lh LostCam-unsigned.ipa
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LostCam-unsigned-ipa
+          path: ios/LostCam-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Note how to install it
+        run: |
+          echo "### iOS build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`LostCam-unsigned.ipa\` is attached to this run." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "It is **unsigned**, so it will not install by itself." >> "$GITHUB_STEP_SUMMARY"
+          echo "Sign it with your own identity, or open \`ios/\` in Xcode" >> "$GITHUB_STEP_SUMMARY"
+          echo "(run \`xcodegen generate\` first), set your team, and run it" >> "$GITHUB_STEP_SUMMARY"
+          echo "on your device. A free Apple ID works for a 7-day build." >> "$GITHUB_STEP_SUMMARY"

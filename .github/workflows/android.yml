@@ -1,0 +1,91 @@
+name: Android app
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Test and build the APK
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        # gradle-wrapper.jar is deliberately not committed — a binary in the repo
+        # is a supply-chain surface, and this action provides Gradle directly.
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.9"
+
+      - name: Unit tests
+        # The protocol, JSON, sensor-unit-conversion and subscriber logic all run
+        # on a plain JVM, so the parts most likely to be wrong are tested without
+        # an emulator.
+        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Lint
+        run: gradle :app:lintDebug --no-daemon || true
+
+      - name: Build the debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Locate the APK
+        id: apk
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" -print -quit)
+          if [ -z "$APK" ]; then
+            echo "No APK was produced" >&2
+            find app/build/outputs -maxdepth 4 >&2 || true
+            exit 1
+          fi
+          echo "Built $APK"
+          ls -lh "$APK"
+          echo "path=android/$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LostCam-debug-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-report
+          path: android/app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Note how to install it
+        run: |
+          echo "### Android build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`LostCam-debug-apk\` is attached to this run." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install it with \`adb install -r app-debug.apk\`, or copy it to" >> "$GITHUB_STEP_SUMMARY"
+          echo "the phone and allow installing from unknown sources." >> "$GITHUB_STEP_SUMMARY"
+          echo "It is a debug build, signed with the standard debug key." >> "$GITHUB_STEP_SUMMARY"

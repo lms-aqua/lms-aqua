@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lostcam"
+version = "1.0.0"
+description = "Use your phone as a webcam and microphone on Windows and Linux"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Lost Media Studios" }]
+keywords = ["webcam", "virtual-camera", "mjpeg", "droidcam", "v4l2loopback", "obs"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video :: Capture",
+]
+dependencies = [
+  "numpy>=1.23",
+  "pillow>=9.0",
+]
+
+[project.optional-dependencies]
+# The virtual camera itself. Separated so the package installs and tests on a
+# machine with no v4l2loopback/OBS at all (CI, headless servers).
+vcam = ["pyvirtualcam>=0.10"]
+audio = ["sounddevice>=0.4"]
+# Only needed for push mode's self-signed certificate; falls back to the
+# openssl CLI when absent.
+tls = ["cryptography>=41"]
+fast = ["opencv-python-headless>=4.8"]
+dev = ["pytest>=7.4", "ruff>=0.6"]
+all = [
+  "pyvirtualcam>=0.10",
+  "sounddevice>=0.4",
+  "cryptography>=41",
+]
+
+[project.scripts]
+lostcam = "lostcam.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/lms-aqua/lostcam"
+Issues = "https://github.com/lms-aqua/lostcam/issues"
+
+[tool.setuptools.packages.find]
+include = ["lostcam*"]
+
+[tool.setuptools.package-data]
+lostcam = ["web/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = ["slow: takes over a second (real sockets, real streams)"]
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 92
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+  "B008",  # argparse/dataclass defaults read fine here
+  "SIM105",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]

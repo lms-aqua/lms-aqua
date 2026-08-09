@@ -1,449 +1,274 @@
-<div align="center">
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:4F46E5,50:7C3AED,100:A78BFA&height=200&section=header&text=YOUR_NAME&fontSize=52&fontColor=FFFFFF&fontAlignY=32&desc=Software%20Engineer%20%7C%20AI%20%2F%20ML%20Engineer%20%7C%20Full%20Stack%20Developer&descAlignY=54&descSize=18&animation=fadeIn" alt="header" />
-
-<a href="https://github.com/lms-aqua">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=24&pause=1000&color=A78BFA&center=true&vCenter=true&width=680&lines=Building+Production-Grade+Software+Systems;Designing+Scalable+AI+%2F+ML+Architectures;Full+Stack+Engineering+at+Enterprise+Scale;Turning+Complex+Problems+into+Clean+Products" alt="Typing SVG" />
-</a>
-
-<br />
-
-![Degree](https://img.shields.io/badge/YOUR_DEGREE-Computer%20Science-6D28D9?style=for-the-badge&labelColor=0D1117)
-![University](https://img.shields.io/badge/YOUR_UNIVERSITY-Class%20of%20YYYY-7C3AED?style=for-the-badge&labelColor=0D1117)
-![CGPA](https://img.shields.io/badge/CGPA-X.XX%20%2F%2010-8B5CF6?style=for-the-badge&labelColor=0D1117)
-
-![Location](https://img.shields.io/badge/YOUR_CITY,%20YOUR_COUNTRY-4F46E5?style=for-the-badge&logo=googlemaps&logoColor=white&labelColor=0D1117)
-
-<br />
-
-<a href="https://YOUR_PORTFOLIO_URL">
-  <img src="https://img.shields.io/badge/Portfolio-6D28D9?style=for-the-badge&logo=vercel&logoColor=white&labelColor=0D1117" alt="Portfolio" />
-</a>
-<a href="https://linkedin.com/in/YOUR_LINKEDIN_HANDLE">
-  <img src="https://img.shields.io/badge/LinkedIn-7C3AED?style=for-the-badge&logo=linkedin&logoColor=white&labelColor=0D1117" alt="LinkedIn" />
-</a>
-<a href="mailto:aqua@lostmediastudios.com">
-  <img src="https://img.shields.io/badge/Email-8B5CF6?style=for-the-badge&logo=gmail&logoColor=white&labelColor=0D1117" alt="Email" />
-</a>
-<a href="https://github.com/lms-aqua">
-  <img src="https://img.shields.io/badge/GitHub-4F46E5?style=for-the-badge&logo=github&logoColor=white&labelColor=0D1117" alt="GitHub" />
-</a>
-
-<br /><br />
-
-<img src="https://komarev.com/ghpvc/?username=lms-aqua&label=Profile%20Views&color=7C3AED&style=for-the-badge" alt="Profile Views" />
-<img src="https://img.shields.io/github/followers/lms-aqua?label=Followers&style=for-the-badge&color=6D28D9&labelColor=0D1117" alt="Followers" />
-<img src="https://img.shields.io/github/stars/lms-aqua?label=Total%20Stars&style=for-the-badge&color=8B5CF6&labelColor=0D1117" alt="Stars" />
-
-</div>
-
----
-
-## About
-
-I am a software engineer focused on designing, building, and shipping **production-grade systems** that hold up under real traffic, real data, and real users. My work sits at the intersection of **distributed backend engineering**, **applied AI/ML**, and **full stack product development** — architecting services that stay correct at scale, training and deploying models that create measurable business value, and delivering interfaces people actually want to use.
-
-I approach engineering with a **product mindset**: clean abstractions over clever code, measurable outcomes over feature counts, observability and security designed in from day one rather than retrofitted. I care about latency budgets, cost per request, deployment safety, and the long-term maintainability of everything I put my name on.
-
-**Core Focus**
-
-- **Software Engineering** — distributed systems, API design, event-driven architecture, performance engineering, clean architecture, and test-driven delivery
-- **AI / ML Engineering** — deep learning, NLP, computer vision, LLM systems, RAG pipelines, model deployment, and MLOps lifecycle ownership
-- **Full Stack Development** — type-safe frontends, high-throughput backends, relational and vector data modeling, real-time systems
-- **Product Engineering** — requirement decomposition, technical trade-off analysis, cross-functional delivery, and shipping iteratively with instrumentation
-
-**Open To**
-
-`Software Engineering Roles` · `AI / ML Engineering Roles` · `Full Stack Development Roles` · `Backend & Platform Engineering` · `Research Collaborations` · `Open Source Contribution`
-
----
-
-## Tech Stack
-
-<div align="center">
-
-### Languages
-
-[![Languages](https://skillicons.dev/icons?i=python,java,cpp,c,js,ts,go,rust,cs,kotlin&theme=dark)](https://skillicons.dev)
-
-### Frontend
-
-[![Frontend](https://skillicons.dev/icons?i=react,nextjs,vue,redux,tailwind,html,css,sass,vite,threejs&theme=dark)](https://skillicons.dev)
-
-### Backend & Databases
-
-[![Backend](https://skillicons.dev/icons?i=nodejs,express,fastapi,django,flask,spring,graphql,postgres,mysql,mongodb,redis,elasticsearch&theme=dark)](https://skillicons.dev)
-
-### Cloud, DevOps & Tooling
-
-[![DevOps](https://skillicons.dev/icons?i=aws,gcp,azure,docker,kubernetes,terraform,githubactions,jenkins,nginx,linux,git,grafana&theme=dark)](https://skillicons.dev)
-
-### AI / ML & Data
-
-[![AI](https://skillicons.dev/icons?i=pytorch,tensorflow,sklearn,opencv,anaconda,kafka&theme=dark)](https://skillicons.dev)
-
-</div>
-
----
-
-## AI / ML Expertise
-
-| Domain | Proficiency | Details |
-| :--- | :---: | :--- |
-| **Deep Learning** | ![Advanced](https://img.shields.io/badge/Advanced-6D28D9?style=flat-square&labelColor=0D1117) | CNNs, RNNs, LSTMs, Transformers, attention mechanisms, transfer learning, custom loss design, distributed multi-GPU training |
-| **Natural Language Processing** | ![Advanced](https://img.shields.io/badge/Advanced-6D28D9?style=flat-square&labelColor=0D1117) | Tokenization pipelines, embeddings, NER, summarization, sentiment analysis, sequence-to-sequence modeling, transformer fine-tuning |
-| **Large Language Models** | ![Advanced](https://img.shields.io/badge/Advanced-6D28D9?style=flat-square&labelColor=0D1117) | Prompt engineering, RAG architecture, LoRA / PEFT fine-tuning, function calling, agentic workflows, evaluation harnesses, guardrails |
-| **Computer Vision** | ![Proficient](https://img.shields.io/badge/Proficient-7C3AED?style=flat-square&labelColor=0D1117) | Object detection, semantic segmentation, OCR pipelines, image classification, augmentation strategy, real-time inference |
-| **MLOps & Deployment** | ![Proficient](https://img.shields.io/badge/Proficient-7C3AED?style=flat-square&labelColor=0D1117) | Model registry, CI/CD for ML, containerized inference, autoscaling GPU serving, drift detection, experiment tracking |
-| **Vector Search & Retrieval** | ![Proficient](https://img.shields.io/badge/Proficient-7C3AED?style=flat-square&labelColor=0D1117) | Embedding stores, hybrid search, HNSW / IVF indexing, chunking strategy, reranking, semantic caching |
-| **Data Engineering** | ![Proficient](https://img.shields.io/badge/Proficient-7C3AED?style=flat-square&labelColor=0D1117) | ETL orchestration, streaming ingestion, feature stores, data validation, schema evolution, warehouse modeling |
-| **Classical Machine Learning** | ![Advanced](https://img.shields.io/badge/Advanced-6D28D9?style=flat-square&labelColor=0D1117) | Ensemble methods, gradient boosting, dimensionality reduction, clustering, feature engineering, hyperparameter optimization |
-| **MLOps Observability** | ![Intermediate](https://img.shields.io/badge/Intermediate-8B5CF6?style=flat-square&labelColor=0D1117) | Latency and cost telemetry, A/B rollout of models, shadow deployment, quality regression dashboards |
-
----
-
-## Featured Projects
-
-<details>
-<summary><b>PROJECT_ONE_NAME — One-line positioning statement for the project</b></summary>
-
-<br />
-
-Short paragraph describing what PROJECT_ONE_NAME is, the problem it solves, and who it serves. Keep it to two or three sentences of concrete, outcome-oriented description.
-
-| Attribute | Detail |
-| :--- | :--- |
-| **Stack** | `TypeScript` · `Next.js` · `Node.js` · `PostgreSQL` · `Redis` · `Docker` · `AWS` |
-| **Scale** | XXX,XXX requests/day · XX,XXX active users · XX GB dataset · XX services |
-| **Performance** | pXX latency XXms · XX% cache hit rate · XX% reduction in cold-start time |
-| **Security** | JWT + refresh rotation · RBAC · rate limiting · input validation · encrypted at rest |
-| **Impact** | Reduced manual effort by XX% · cut infrastructure spend by $X,XXX/month · XX% adoption |
-| **Repository** | [View Source](https://github.com/lms-aqua/PROJECT_ONE_REPO) |
-
-Explain the engineering decisions that mattered: why this architecture over the alternatives, what constraint drove the data model, how the system degrades under failure, and what you would change with more time. Two to four sentences of senior-level technical reasoning.
-
-</details>
-
-<details>
-<summary><b>PROJECT_TWO_NAME — One-line positioning statement for the project</b></summary>
-
-<br />
-
-Short paragraph describing what PROJECT_TWO_NAME is, the problem it solves, and who it serves. Keep it to two or three sentences of concrete, outcome-oriented description.
-
-| Attribute | Detail |
-| :--- | :--- |
-| **Stack** | `Python` · `PyTorch` · `FastAPI` · `Vector DB` · `Kubernetes` · `GCP` |
-| **Scale** | XX M tokens processed · XXX,XXX documents indexed · XX concurrent inference workers |
-| **Performance** | XX% accuracy · XX ms median inference · XXx throughput improvement after optimization |
-| **Security** | Prompt injection filtering · PII redaction · audit logging · tenant isolation |
-| **Impact** | XX% improvement in retrieval relevance · XX hours/week of analyst time recovered |
-| **Repository** | [View Source](https://github.com/lms-aqua/PROJECT_TWO_REPO) |
-
-Explain the modeling and systems trade-offs: dataset construction, evaluation methodology, why the chosen architecture beat the baseline, and how the pipeline is kept reproducible in production.
-
-</details>
-
-<details>
-<summary><b>PROJECT_THREE_NAME — One-line positioning statement for the project</b></summary>
-
-<br />
-
-Short paragraph describing what PROJECT_THREE_NAME is, the problem it solves, and who it serves. Keep it to two or three sentences of concrete, outcome-oriented description.
-
-| Attribute | Detail |
-| :--- | :--- |
-| **Stack** | `Go` · `gRPC` · `Kafka` · `PostgreSQL` · `Terraform` · `Grafana` |
-| **Scale** | XX,XXX events/second · XX partitions · XX-node cluster · XX% uptime |
-| **Performance** | XX ms end-to-end pipeline latency · XX% CPU reduction · zero-downtime deploys |
-| **Security** | mTLS between services · secret rotation · least-privilege IAM · signed artifacts |
-| **Impact** | Replaced legacy batch process · XX% faster time-to-insight · $X,XXX/month saved |
-| **Repository** | [View Source](https://github.com/lms-aqua/PROJECT_THREE_REPO) |
-
-Explain the distributed-systems reasoning: consistency guarantees, backpressure handling, idempotency strategy, observability surface, and the failure modes you explicitly designed for.
-
-</details>
-
-<details>
-<summary><b>PROJECT_FOUR_NAME — One-line positioning statement for the project</b></summary>
-
-<br />
-
-Short paragraph describing what PROJECT_FOUR_NAME is, the problem it solves, and who it serves. Keep it to two or three sentences of concrete, outcome-oriented description.
-
-| Attribute | Detail |
-| :--- | :--- |
-| **Stack** | `React` · `TypeScript` · `Tailwind CSS` · `Supabase` · `Vercel Edge` |
-| **Scale** | XX,XXX monthly visitors · XX countries · XXX,XXX page views |
-| **Performance** | Lighthouse XX/100 · LCP X.Xs · CLS 0.0X · XX KB initial bundle |
-| **Security** | Row-level security · CSP headers · OAuth 2.0 · CSRF protection |
-| **Impact** | XX% increase in conversion · XX% drop in bounce rate · WCAG 2.2 AA compliant |
-| **Repository** | [View Source](https://github.com/lms-aqua/PROJECT_FOUR_REPO) |
-
-Explain the frontend architecture and product thinking: rendering strategy, state boundaries, accessibility approach, performance budget enforcement, and how design decisions mapped to measured user outcomes.
-
-</details>
-
----
-
-## Experience
-
-### Software Engineer Intern · COMPANY_NAME_ONE
-
-![Duration](https://img.shields.io/badge/MMM%20YYYY%20—%20MMM%20YYYY-6D28D9?style=flat-square&labelColor=0D1117)
-![Type](https://img.shields.io/badge/Full%20Time-7C3AED?style=flat-square&labelColor=0D1117)
-![Location](https://img.shields.io/badge/YOUR_CITY%20%2F%20Remote-8B5CF6?style=flat-square&labelColor=0D1117)
-
-Two-sentence professional summary of the role: the team, the domain, the systems you owned, and the business outcome you were accountable for.
-
-**Scope of Work**
-
-- Designed and shipped FEATURE_OR_SERVICE, serving XX,XXX daily requests with pXX latency under XXX ms
-- Reduced METRIC by XX% by REPLACING_OR_OPTIMIZING specific component, validated through load testing and production telemetry
-- Owned end-to-end delivery of MODULE across design review, implementation, testing, deployment, and on-call support
-- Improved test coverage from XX% to XX% and cut CI pipeline duration by XX% through parallelization and caching
-- Collaborated with product, design, and data teams to decompose ambiguous requirements into shippable increments
-
-**Skills**
-
-![Skill](https://img.shields.io/badge/System%20Design-6D28D9?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Backend%20Engineering-7C3AED?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Cloud%20Infrastructure-8B5CF6?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/CI%20%2F%20CD-4F46E5?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Observability-A78BFA?style=flat-square&labelColor=0D1117)
-
-<br />
-
-### AI / ML Engineer Intern · COMPANY_NAME_TWO
-
-![Duration](https://img.shields.io/badge/MMM%20YYYY%20—%20MMM%20YYYY-6D28D9?style=flat-square&labelColor=0D1117)
-![Type](https://img.shields.io/badge/Internship-7C3AED?style=flat-square&labelColor=0D1117)
-![Location](https://img.shields.io/badge/YOUR_CITY%20%2F%20Remote-8B5CF6?style=flat-square&labelColor=0D1117)
-
-Two-sentence professional summary of the role: the modeling problem, the data you worked with, and the measurable improvement you delivered to production.
-
-**Scope of Work**
-
-- Built and deployed MODEL_OR_PIPELINE, improving BASELINE_METRIC from XX% to XX% on held-out evaluation data
-- Engineered the training and inference pipeline end to end, including data validation, versioning, and reproducible experiment tracking
-- Cut inference cost per request by XX% via quantization, batching, and caching without measurable quality regression
-- Authored the evaluation framework used to gate model releases, covering accuracy, latency, and failure-mode regression suites
-- Presented findings and trade-offs to engineering and non-technical stakeholders to drive rollout decisions
-
-**Skills**
-
-![Skill](https://img.shields.io/badge/Deep%20Learning-6D28D9?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/MLOps-7C3AED?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Model%20Deployment-8B5CF6?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Data%20Engineering-4F46E5?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Evaluation%20Design-A78BFA?style=flat-square&labelColor=0D1117)
-
-<br />
-
-### Open Source Contributor · PROJECT_OR_ORG_NAME
-
-![Duration](https://img.shields.io/badge/MMM%20YYYY%20—%20Present-6D28D9?style=flat-square&labelColor=0D1117)
-![Type](https://img.shields.io/badge/Open%20Source-7C3AED?style=flat-square&labelColor=0D1117)
-![Location](https://img.shields.io/badge/Remote-8B5CF6?style=flat-square&labelColor=0D1117)
-
-Two-sentence summary of your open source involvement: the projects, the nature of your contributions, and their reach.
-
-**Scope of Work**
-
-- Merged XX pull requests across AREA_ONE and AREA_TWO, including performance fixes and API ergonomics improvements
-- Triaged and resolved XX issues, reducing maintainer load and improving first-response time for new contributors
-- Authored documentation and examples that lowered the onboarding barrier for downstream consumers of the library
-
-**Skills**
-
-![Skill](https://img.shields.io/badge/Code%20Review-6D28D9?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Collaboration-7C3AED?style=flat-square&labelColor=0D1117)
-![Skill](https://img.shields.io/badge/Technical%20Writing-8B5CF6?style=flat-square&labelColor=0D1117)
-
----
-
-## Achievements
-
-<div align="center">
-
-| Recognition | Details |
-| :--- | :--- |
-| **ACHIEVEMENT_ONE** | Placed in the top XX of X,XXX participants at EVENT_NAME, YYYY — built SOLUTION under a XX-hour constraint |
-| **ACHIEVEMENT_TWO** | Winner, HACKATHON_NAME YYYY — selected from XXX teams for TECHNICAL_DIFFERENTIATOR |
-| **ACHIEVEMENT_THREE** | Ranked in the global top X% on PLATFORM_NAME with a peak rating of XXXX |
-| **ACHIEVEMENT_FOUR** | Published PAPER_OR_ARTICLE_TITLE at VENUE_NAME, YYYY |
-| **ACHIEVEMENT_FIVE** | Awarded AWARD_NAME by ORGANIZATION for CONTRIBUTION_SUMMARY |
-| **ACHIEVEMENT_SIX** | Maintained a CGPA of X.XX / 10 while leading TEAM_OR_CLUB_NAME across XX members |
-| **ACHIEVEMENT_SEVEN** | Solved XXX+ algorithmic problems across competitive programming platforms |
-| **ACHIEVEMENT_EIGHT** | Speaker at EVENT_NAME, YYYY — presented on TOPIC to an audience of XXX+ |
-
-</div>
-
----
-
-## Certifications
-
-<div align="center">
-
-### Amazon Web Services
-
-![AWS](https://img.shields.io/badge/AWS%20Certified%20Cloud%20Practitioner-6D28D9?style=for-the-badge&logo=amazonwebservices&logoColor=white&labelColor=0D1117)
-![AWS](https://img.shields.io/badge/AWS%20Certified%20Solutions%20Architect%20—%20Associate-7C3AED?style=for-the-badge&logo=amazonwebservices&logoColor=white&labelColor=0D1117)
-![AWS](https://img.shields.io/badge/AWS%20Certified%20Machine%20Learning%20—%20Specialty-8B5CF6?style=for-the-badge&logo=amazonwebservices&logoColor=white&labelColor=0D1117)
-
-### Oracle
-
-![Oracle](https://img.shields.io/badge/Oracle%20Cloud%20Infrastructure%20Foundations%20Associate-4F46E5?style=for-the-badge&logo=oracle&logoColor=white&labelColor=0D1117)
-![Oracle](https://img.shields.io/badge/Oracle%20Cloud%20Infrastructure%20AI%20Foundations%20Associate-6D28D9?style=for-the-badge&logo=oracle&logoColor=white&labelColor=0D1117)
-![Oracle](https://img.shields.io/badge/Oracle%20Certified%20Java%20Foundations-7C3AED?style=for-the-badge&logo=oracle&logoColor=white&labelColor=0D1117)
-
-### NPTEL
-
-![NPTEL](https://img.shields.io/badge/NPTEL%20—%20Data%20Structures%20and%20Algorithms-8B5CF6?style=for-the-badge&logo=googlescholar&logoColor=white&labelColor=0D1117)
-![NPTEL](https://img.shields.io/badge/NPTEL%20—%20Machine%20Learning-4F46E5?style=for-the-badge&logo=googlescholar&logoColor=white&labelColor=0D1117)
-![NPTEL](https://img.shields.io/badge/NPTEL%20—%20Database%20Management%20Systems-6D28D9?style=for-the-badge&logo=googlescholar&logoColor=white&labelColor=0D1117)
-![NPTEL](https://img.shields.io/badge/NPTEL%20—%20Cloud%20Computing-7C3AED?style=for-the-badge&logo=googlescholar&logoColor=white&labelColor=0D1117)
-
-### Cisco
-
-![Cisco](https://img.shields.io/badge/Cisco%20—%20Introduction%20to%20Cybersecurity-8B5CF6?style=for-the-badge&logo=cisco&logoColor=white&labelColor=0D1117)
-![Cisco](https://img.shields.io/badge/Cisco%20—%20Networking%20Basics-4F46E5?style=for-the-badge&logo=cisco&logoColor=white&labelColor=0D1117)
-![Cisco](https://img.shields.io/badge/Cisco%20—%20Python%20Essentials-6D28D9?style=for-the-badge&logo=cisco&logoColor=white&labelColor=0D1117)
-
-</div>
-
----
-
-## Coding Profiles
-
-<div align="center">
-
-<a href="https://leetcode.com/u/YOUR_LEETCODE_HANDLE/">
-  <img src="https://img.shields.io/badge/LeetCode%20%E2%80%94%20XXX%2B%20Solved-6D28D9?style=for-the-badge&logo=leetcode&logoColor=white&labelColor=0D1117" alt="LeetCode" />
-</a>
-
-<a href="https://www.geeksforgeeks.org/user/YOUR_GFG_HANDLE/">
-  <img src="https://img.shields.io/badge/GeeksforGeeks%20%E2%80%94%20XXX%2B%20Solved-7C3AED?style=for-the-badge&logo=geeksforgeeks&logoColor=white&labelColor=0D1117" alt="GeeksforGeeks" />
-</a>
-
-<a href="https://www.hackerrank.com/profile/YOUR_HACKERRANK_HANDLE">
-  <img src="https://img.shields.io/badge/HackerRank%20%E2%80%94%20X%20Star%20Gold-8B5CF6?style=for-the-badge&logo=hackerrank&logoColor=white&labelColor=0D1117" alt="HackerRank" />
-</a>
-
-<a href="https://www.codechef.com/users/YOUR_CODECHEF_HANDLE">
-  <img src="https://img.shields.io/badge/CodeChef%20%E2%80%94%20X%E2%98%85%20Rated%20XXXX-4F46E5?style=for-the-badge&logo=codechef&logoColor=white&labelColor=0D1117" alt="CodeChef" />
-</a>
-
-<a href="https://codeforces.com/profile/YOUR_CODEFORCES_HANDLE">
-  <img src="https://img.shields.io/badge/Codeforces%20%E2%80%94%20Rated%20XXXX-A78BFA?style=for-the-badge&logo=codeforces&logoColor=white&labelColor=0D1117" alt="Codeforces" />
-</a>
-
-</div>
-
----
-
-## GitHub Analytics
-
-<div align="center">
-
-<img width="49%" src="https://github-readme-stats.vercel.app/api?username=lms-aqua&show_icons=true&count_private=true&include_all_commits=true&hide_border=true&bg_color=0D1117&title_color=A78BFA&text_color=C9D1D9&icon_color=7C3AED&ring_color=8B5CF6" alt="GitHub Stats" />
-<img width="49%" src="https://streak-stats.demolab.com?user=lms-aqua&hide_border=true&background=0D1117&stroke=8B5CF6&ring=A78BFA&fire=7C3AED&currStreakLabel=A78BFA&sideLabels=C9D1D9&currStreakNum=FFFFFF&sideNums=FFFFFF&dates=8B949E" alt="GitHub Streak" />
-
-<br /><br />
-
-<img width="42%" src="https://github-readme-stats.vercel.app/api/top-langs/?username=lms-aqua&layout=compact&langs_count=12&hide_border=true&bg_color=0D1117&title_color=A78BFA&text_color=C9D1D9" alt="Top Languages" />
-
-</div>
-
----
-
-## GitHub Trophies
-
-<div align="center">
-
-<img width="100%" src="https://github-profile-trophy.vercel.app/?username=lms-aqua&theme=discord&no-frame=true&no-bg=true&column=7&margin-w=8&margin-h=8" alt="GitHub Trophies" />
-
-</div>
-
----
-
-## Contribution Activity
-
-<div align="center">
-
-<img width="100%" src="https://github-readme-activity-graph.vercel.app/graph?username=lms-aqua&bg_color=0D1117&color=A78BFA&line=7C3AED&point=C9D1D9&area=true&area_color=6D28D9&hide_border=true&custom_title=Contribution%20Graph" alt="Contribution Activity Graph" />
-
-</div>
-
----
-
-## Contribution Snake
-
-<div align="center">
-
-<img width="100%" src="https://raw.githubusercontent.com/lms-aqua/lms-aqua/output/github-contribution-grid-snake-dark.svg" alt="Contribution Snake" />
-
-</div>
-
----
-
-## Current Focus
-
-```yaml
-learning:
-  - Distributed systems design and consensus protocols
-  - Advanced LLM system architecture and agentic orchestration
-  - Rust for performance-critical and memory-safe services
-  - Kubernetes operators and platform engineering patterns
-
-building:
-  - PROJECT_ONE_NAME  # production system at XX,XXX daily requests
-  - PROJECT_TWO_NAME  # retrieval-augmented ML pipeline
-  - Open source contributions to PROJECT_OR_ORG_NAME
-
-exploring:
-  - Vector database internals and approximate nearest neighbor indexing
-  - Cost-aware inference optimization and model quantization
-  - Event-driven architecture at scale with exactly-once semantics
-  - Developer experience tooling and internal platform design
-
-open_to:
-  - Software Engineering roles
-  - AI / ML Engineering roles
-  - Full Stack Development roles
-  - Backend and Platform Engineering roles
-  - Research collaborations and open source maintainership
+# LostCam
+
+Use a phone as a webcam, a microphone, and a **sensor rig** — on Windows and
+Linux. DroidCam-compatible video, plus an ARKit/IMU data channel and a dataset
+recorder for feeding a model.
+
+```
+  ┌─────────────────────┐                          ┌──────────────────────────┐
+  │  iOS app (Swift)    │ ── GET /video  MJPEG ──▶  │  lostcam (Python)        │
+  │  Android app (Kotlin)│ ── GET /data   NDJSON ──▶ │                          │
+  │  Any phone browser  │ ── GET /depth  u16mm ──▶  │  ├─ virtual camera       │
+  └─────────────────────┘                          │  ├─ bridge: UDP/OSC/WS   │
+        phone is the server                        │  └─ dataset recorder     │
+        (Wi-Fi or USB)                             └──────────────────────────┘
 ```
 
----
+| | |
+| --- | --- |
+| **Video** | MJPEG over HTTP on port 4747, the same shape as DroidCam — a browser, VLC or ffmpeg can open it |
+| **Virtual camera** | `v4l2loopback` on Linux, OBS Virtual Camera on Windows/macOS. Shows up in Zoom, Teams, Discord, OBS |
+| **Data channel** | ARKit face blendshapes, 6DoF world pose, planes, light, IMU, barometer, battery — as NDJSON |
+| **Depth** | LiDAR depth frames as u16 millimetres (iPhone/iPad Pro) |
+| **Bridge** | Re-emits telemetry as UDP JSON, OSC, WebSocket or CSV for Unity, TouchDesigner, Blender or a browser |
+| **Dataset recorder** | Frames + depth + telemetry, time-aligned, with a manifest your training code can read |
 
-## Connect
+## Quick start
 
-<div align="center">
+**1. Desktop:**
 
-<a href="mailto:YOUR_EMAIL@DOMAIN.COM">
-  <img src="https://img.shields.io/badge/Gmail-6D28D9?style=for-the-badge&logo=gmail&logoColor=white&labelColor=0D1117" alt="Gmail" />
-</a>
-<a href="https://linkedin.com/in/YOUR_LINKEDIN_HANDLE">
-  <img src="https://img.shields.io/badge/LinkedIn-7C3AED?style=for-the-badge&logo=linkedin&logoColor=white&labelColor=0D1117" alt="LinkedIn" />
-</a>
-<a href="https://github.com/lms-aqua">
-  <img src="https://img.shields.io/badge/GitHub-8B5CF6?style=for-the-badge&logo=github&logoColor=white&labelColor=0D1117" alt="GitHub" />
-</a>
-<a href="https://YOUR_PORTFOLIO_URL">
-  <img src="https://img.shields.io/badge/Portfolio-4F46E5?style=for-the-badge&logo=vercel&logoColor=white&labelColor=0D1117" alt="Portfolio" />
-</a>
+```bash
+git clone https://github.com/lms-aqua/lostcam && cd lostcam/client
+pip install -e ".[all]"
+lostcam doctor          # checks your virtual camera, audio and adb setup
+```
 
-</div>
+**2. Phone.** Any one of:
 
----
+- **iOS app** — open `ios/` in Xcode (`brew install xcodegen && xcodegen generate`
+  first), set your team, run. Or grab the unsigned IPA from CI and sign it.
+- **Android app** — install the APK from CI: `adb install -r app-debug.apk`.
+- **No install at all** — run `lostcam serve` and open the printed `https://…`
+  URL on the phone. Works on iOS and Android.
 
-<div align="center">
+**3. Connect:**
 
-### *Engineering is not about writing code — it is about designing systems that outlive the assumptions they were built on.*
+```bash
+lostcam pull 192.168.1.42          # the IP the app shows
+lostcam pull 192.168.1.42 --usb    # over USB instead (Android, needs adb)
+lostcam discover                   # if you don't know the IP
+```
 
-<br />
+The phone's camera now appears as a webcam. Pick "LostCam"/"OBS Virtual Camera"
+in Zoom, Teams, Discord or OBS.
 
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:A78BFA,50:7C3AED,100:4F46E5&height=140&section=footer&text=Thanks%20for%20visiting&fontSize=28&fontColor=FFFFFF&fontAlignY=68&desc=Let%27s%20build%20something%20exceptional&descAlignY=88&descSize=14&animation=fadeIn" alt="footer" />
+### No phone handy?
 
-</div>
+The desktop half can be tested on its own — this is also the fastest way to find
+out whether a problem is your virtual camera or your phone:
+
+```bash
+lostcam mocksender          # in one terminal: pretends to be a phone
+lostcam pull 127.0.0.1      # in another
+```
+
+If the moving test pattern shows up in Zoom, the desktop side is fine.
+
+## Prerequisites for the virtual camera
+
+LostCam does **not** ship a camera driver. Writing and signing one is a
+multi-week project per platform, so it writes into the virtual cameras you
+already have.
+
+**Linux** — the `v4l2loopback` kernel module:
+
+```bash
+sudo apt install v4l2loopback-dkms
+sudo modprobe v4l2loopback devices=1 card_label=LostCam exclusive_caps=1
+```
+
+`exclusive_caps=1` is what makes Chrome and Chromium-based apps accept the
+device. Check it appeared with `ls /dev/video*`.
+
+**Windows / macOS** — install [OBS Studio](https://obsproject.com) (26.0+),
+start it once, and click **Start Virtual Camera** so the device gets registered.
+After that LostCam can write to it with OBS closed.
+
+One inherited limitation: OBS exposes a *single* virtual camera instance, so you
+cannot have LostCam feeding it and OBS emitting its own output on the same device
+at once. Install Unity Capture and pass `--backend unitycapture` if you need both.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `lostcam pull <ip>` | Phone serves, desktop connects. Feeds the virtual camera |
+| `lostcam pull <ip> --usb` | Same, tunneled over USB with `adb forward` |
+| `lostcam serve` | Desktop serves the browser sender page; the phone pushes frames |
+| `lostcam data <ip>` | Print the sensor/AR channel as NDJSON (pipe it to `jq`) |
+| `lostcam bridge <ip> --osc --udp --ws` | Fan telemetry out to other applications |
+| `lostcam record <ip> --out dir` | Record telemetry to CSV + JSONL |
+| `lostcam capture <ip> --out dir` | Record an aligned **dataset**: frames + depth + telemetry |
+| `lostcam discover` | Find senders on the LAN |
+| `lostcam devices` | List Android devices visible to `adb` |
+| `lostcam doctor` | Diagnose the local setup |
+| `lostcam mocksender` | Pretend to be a phone |
+
+Useful flags: `--rotate 90`, `--hflip`, `--fit cover`, `--width/--height`,
+`--token`, `--audio`, `--no-vcam` (decode without a virtual camera).
+
+## The data channel
+
+Every channel is **off until you turn it on** in the app. `/info` advertises what
+that phone can actually deliver, so a consumer reads capabilities rather than
+assuming them.
+
+```bash
+$ lostcam data 192.168.1.42 --channels ar.face,attitude --hz 30
+{"t":41231,"seq":2,"ch":"ar.face","tracked":true,"blend":{"jawOpen":0.31,...}}
+{"t":41264,"seq":3,"ch":"attitude","q":[0.01,-0.02,0,0.99],"euler":[1.3,-2.3,0.1]}
+```
+
+It is plain NDJSON over HTTP, so `curl -N http://phone:4747/data | jq` is a valid
+client and no library is required.
+
+| Channel | Carries | iOS | Android |
+| --- | --- | --- | --- |
+| `attitude` | Orientation quaternion + euler | ✅ | ✅ |
+| `motion` | Accel, gyro, gravity, magnetometer | ✅ | ✅ |
+| `barometer` | Pressure, relative altitude | ✅ | ✅ |
+| `battery` | Level, charging, thermal state | ✅ | ✅ |
+| `location` | Lat/lon/accuracy — **opt-in, off by default** | ✅ | ✅ |
+| `ar.world` | 6DoF camera pose, tracking state, intrinsics | ✅ | — |
+| `ar.face` | 52 ARKit blendshapes, eye transforms, gaze | ✅ | — |
+| `ar.planes` | Detected planes, extent, classification | ✅ | — |
+| `light` | Ambient lumens, colour temperature | ✅ | — |
+| `/depth` | LiDAR depth, u16 millimetres | Pro models | — |
+
+**The AR channels are iOS-only, deliberately.** ARCore's Augmented Faces API
+produces a mesh and three region poses but *no blendshape coefficients*, so an
+`ar.face` channel on Android could never mean what it means on iOS — and
+synthesising coefficients from the mesh would be worse than absence, because a
+consumer would have no way to tell measured values from invented ones. The
+capability list exists so Android can omit them honestly.
+
+Field-by-field definitions, coordinate conventions and units:
+**[docs/SENSORS.md](docs/SENSORS.md)**.
+
+### Bridging it into other software
+
+```bash
+# OSC to TouchDesigner/Blender, UDP JSON to Unity, WebSocket to a browser
+lostcam bridge 192.168.1.42 --osc 127.0.0.1:9000 --udp --ws 8765
+```
+
+OSC addresses come out as `/lostcam/ar/face/blend/jawOpen`, directly bindable in
+most receivers without a mapping table. Every sink is independent — a UDP
+listener that is not running, or a consumer that throws, cannot take the bridge
+down.
+
+## Recording a dataset
+
+Built for a phone on a tripod watching a 3D printer, but nothing about it is
+printer-specific.
+
+```bash
+lostcam capture 192.168.1.42 \
+  --out runs/2026-08-09-benchy \
+  --roi 420,300,880,660 --plate-mm 220 \
+  --calibrate-plate --every 15
+```
+
+Produces frames, depth rasters, and a `manifest.jsonl` with one record per frame
+carrying per-frame metrics (brightness, sharpness, frame-difference, depth
+statistics, height above the plate in millimetres) and every sensor channel's
+latest value with its age. Alignment is by the shared monotonic clock, which is
+why that clock is specified the way it is.
+
+**Two things to know before you rely on it:**
+
+1. **Lock exposure, white balance and focus in the app** ("Focus on centre and
+   lock"). Left on auto over a four-hour print, the same physical scene drifts in
+   brightness and sharpness, and a model learns the camera's reaction instead of
+   the print — while appearing to validate fine, because the drift correlates with
+   time and time correlates with progress.
+2. **LiDAR resolves centimetres, not layer heights.** It is good for "is there
+   anything on the plate", gross shape, and catastrophic failure (spaghetti,
+   detachment, blobs). It cannot see a 0.2 mm layer. For fine defects the colour
+   frames are the signal.
+
+Full format, reading code, and the data-quality checklist:
+**[docs/DATASET.md](docs/DATASET.md)**.
+
+## Security
+
+Read this bit; the defaults are chosen for a trusted LAN and nothing else.
+
+- **Video is unauthenticated by default.** Anyone who can reach the phone's port
+  can watch the camera. The app binds only while streaming is on, and shows the
+  URL that is live.
+- **The data channel is more sensitive than the video.** Continuous face
+  blendshapes are biometric-adjacent, and 6DoF pose plus planes is a partial map
+  of your room. Hence: every channel off by default, and `location` behind its own
+  separate opt-in that is never implied by anything else.
+- **Set a token** (`--token`, and the field in the app) on any network you do not
+  control. It is compared in constant time. It is a mitigation for "same Wi-Fi as
+  strangers", not a substitute for not being there.
+- **USB is the private option.** With `adb forward` the port is bound on the
+  desktop's loopback interface and never exposed to the network at all.
+- Push mode's HTTPS uses a self-signed certificate. It stops passive sniffing on
+  the LAN; it does not authenticate the server against an active attacker.
+- **Never port-forward any of this to the internet.**
+
+## Repository layout
+
+```
+client/     Python desktop client — virtual camera, bridge, dataset recorder
+ios/        iOS sender (Swift/SwiftUI, AVFoundation, ARKit). XcodeGen spec
+android/    Android sender (Kotlin, CameraX, SensorManager). Gradle
+docs/       PROTOCOL.md, SENSORS.md, DATASET.md, RESEARCH.md
+```
+
+The browser sender lives in `client/lostcam/web/index.html` and is served by
+`lostcam serve`.
+
+## Building
+
+CI builds both apps and runs all three test suites on every push. Artifacts are
+attached to each run: `LostCam-unsigned-ipa` and `LostCam-debug-apk`.
+
+```bash
+# Desktop client
+cd client && pip install -e ".[dev]" && python -m pytest -q && python -m ruff check .
+
+# iOS  (macOS + Xcode)
+cd ios && brew install xcodegen && xcodegen generate && open LostCam.xcodeproj
+
+# Android
+cd android && gradle :app:testDebugUnitTest && gradle :app:assembleDebug
+```
+
+The `.xcodeproj` and Gradle wrapper jar are **not** committed — the Xcode project
+is generated from `ios/project.yml` so it cannot drift or cause pbxproj merge
+conflicts, and CI provides Gradle directly rather than the repository carrying a
+binary.
+
+The IPA that CI produces is **unsigned** and will not install as-is. Sign it with
+your own identity, or build from Xcode with your team selected — a free Apple ID
+gives you a 7-day build on your own device.
+
+## Design notes
+
+Four decisions worth knowing about, all explained at length in
+[docs/RESEARCH.md](docs/RESEARCH.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md):
+
+- **MJPEG, not H.264.** Every frame is independently compressed, so there is no
+  encoder/decoder delay budget to pay. It costs bandwidth and buys latency; on a
+  LAN that is the right trade, and it is the one DroidCam makes too.
+- **The phone is the server**, matching DroidCam — except in push mode, where the
+  desktop serves and the phone connects out. A web page cannot accept inbound
+  connections, so supporting browsers required reversing the direction. Both feed
+  an identical pipeline.
+- **`getUserMedia` needs a secure context.** A phone loading `http://192.168.x.y`
+  gets no camera API at all — no prompt, no error. That is why push mode serves
+  HTTPS with a generated self-signed cert and a one-time browser warning.
+- **`seq` is per-subscriber.** Two clients asking for different channel subsets
+  cannot share one counter without one seeing gaps, and the spec defines gaps as
+  dropped samples. So each subscriber encodes and numbers its own stream.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
+Not affiliated with DroidCam or Dev47Apps. LostCam speaks a compatible MJPEG
+endpoint so existing tooling works, and is an independent implementation.
