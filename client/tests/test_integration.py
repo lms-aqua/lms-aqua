@@ -441,6 +441,214 @@ class TestCaptureEndToEnd:
             server.stop()
 
 
+class TestStreamLatency:
+    """Regression tests for a full second of hidden latency.
+
+    ``HTTPResponse.read(n)`` blocks until it has all n bytes, so a stream of
+    small frames sat in the socket buffer waiting for enough of them to fill the
+    read. Measured at ~1000 ms before the first 6 KB depth frame was delivered,
+    with intermediate frames then discarded because only the newest is kept.
+    """
+
+    def test_first_depth_frame_arrives_promptly(self):
+        from lostcam.depthstream import DepthPuller
+
+        server = MockSender(port=0, width=64, height=48, depth_size=(64, 48),
+                            depth_fps=10)
+        server.start()
+        try:
+            assert wait_for_port("127.0.0.1", server.bound_port, timeout=SETTLE)
+            arrivals: list[float] = []
+            puller = DepthPuller("127.0.0.1", server.bound_port)
+            start = time.monotonic()
+
+            def on_frame(frame) -> None:
+                arrivals.append(time.monotonic() - start)
+                if len(arrivals) >= 6:
+                    puller.stop()
+
+            thread = threading.Thread(
+                target=lambda: puller.run_once(on_frame), daemon=True
+            )
+            thread.start()
+            assert wait_until(lambda: len(arrivals) >= 6, timeout=15.0), (
+                f"only {len(arrivals)} depth frames arrived"
+            )
+            puller.stop()
+            thread.join(timeout=SETTLE)
+        finally:
+            server.stop()
+
+        # A 6 KB frame at 10 Hz must not wait for a 64 KB buffer to fill. Before
+        # the fix the first frame took ~1000 ms; the bound here is loose enough
+        # for a shared CI runner but far below that.
+        assert arrivals[0] < 0.6, (
+            f"first depth frame took {arrivals[0] * 1000:.0f} ms — the reader is "
+            f"buffering instead of streaming"
+        )
+
+    def test_depth_frames_are_not_delivered_in_one_burst(self):
+        """Buffered reads deliver ~10 frames at once; streaming spreads them out."""
+        from lostcam.depthstream import DepthPuller
+
+        server = MockSender(port=0, width=64, height=48, depth_size=(64, 48),
+                            depth_fps=20)
+        server.start()
+        try:
+            assert wait_for_port("127.0.0.1", server.bound_port, timeout=SETTLE)
+            arrivals: list[float] = []
+            puller = DepthPuller("127.0.0.1", server.bound_port)
+            start = time.monotonic()
+
+            def on_frame(frame) -> None:
+                arrivals.append(time.monotonic() - start)
+                if len(arrivals) >= 10:
+                    puller.stop()
+
+            thread = threading.Thread(
+                target=lambda: puller.run_once(on_frame), daemon=True
+            )
+            thread.start()
+            assert wait_until(lambda: len(arrivals) >= 10, timeout=15.0)
+            puller.stop()
+            thread.join(timeout=SETTLE)
+        finally:
+            server.stop()
+
+        # With burst delivery, most gaps are ~0. With streaming, frames are
+        # separated by roughly the sender's frame interval.
+        gaps = [b - a for a, b in zip(arrivals, arrivals[1:], strict=False)]
+        spread = sum(1 for gap in gaps if gap > 0.01)
+        assert spread >= len(gaps) // 2, (
+            f"frames arrived in bursts, gaps={[round(g, 4) for g in gaps]}"
+        )
+
+    def test_video_frames_stream_promptly_too(self):
+        sink = NullSink(64, 48)
+        server = MockSender(port=0, width=64, height=48, fps=20)
+        server.start()
+        try:
+            assert wait_for_port("127.0.0.1", server.bound_port, timeout=SETTLE)
+            start = time.monotonic()
+            pipeline = FramePipeline(sink)
+            puller = Puller(Source("127.0.0.1", server.bound_port), pipeline)
+            thread = threading.Thread(target=puller.run_once, daemon=True)
+            thread.start()
+            assert wait_until(lambda: sink.frames >= 1, timeout=15.0)
+            first = time.monotonic() - start
+            puller.stop()
+            thread.join(timeout=SETTLE)
+        finally:
+            server.stop()
+        assert first < 1.5, f"first video frame took {first * 1000:.0f} ms"
+
+
+class TestPlateMappingInCapture:
+    """The depth raster must be mapped once per depth frame, not per video frame."""
+
+    def test_height_maps_are_not_duplicated_across_video_frames(self, tmp_path):
+        from lostcam.capture import (
+            CaptureOptions,
+            CaptureSession,
+            collect_depth_frames,
+        )
+        from lostcam.dataset import DatasetConfig, DatasetWriter, read_manifest
+        from lostcam.plate import PlateMapper, scan_plate
+        from lostcam.vision import FrameAnalyser
+
+        server = MockSender(port=0, width=320, height=240, fps=30,
+                            depth_size=(64, 48), depth_fps=10)
+        server.start()
+        try:
+            assert wait_for_port("127.0.0.1", server.bound_port, timeout=SETTLE)
+            source = Source("127.0.0.1", server.bound_port)
+            frames, intrinsics, error = collect_depth_frames(source, 8, 15.0)
+            assert frames, f"no depth frames for the scan: {error}"
+            assert intrinsics is not None
+            report = scan_plate(frames, intrinsics, 100.0)
+            assert report.ok, report.problems
+            assert report.calibration is not None
+
+            writer = DatasetWriter(
+                tmp_path / "ds", DatasetConfig(save_height_maps=True)
+            )
+            session = CaptureSession(
+                source, writer, FrameAnalyser(),
+                CaptureOptions(warmup_frames=0, max_frames=60),
+                mapper=PlateMapper(report.calibration),
+            )
+            session.start()
+            try:
+                assert wait_until(lambda: session.pipeline.written >= 60,
+                                  timeout=30.0)
+            finally:
+                session.stop()
+                writer.finalise()
+        finally:
+            server.stop()
+
+        records = read_manifest(tmp_path / "ds")
+        with_map = [r for r in records if r.get("height_map")]
+        with_depth = [r for r in records if r.get("depth")]
+        distinct_depth = {r["depth"]["t"] for r in with_depth}
+
+        # One height map per distinct depth raster — never one per video frame.
+        assert len(with_map) == len(distinct_depth), (
+            f"{len(with_map)} height maps for {len(distinct_depth)} distinct "
+            f"depth frames"
+        )
+        assert len(with_map) < len(with_depth) or len(with_depth) == len(with_map)
+        # And the mapper ran once per depth frame, not once per video frame.
+        assert session.pipeline.plate_frames == len(distinct_depth)
+
+    def test_plate_measurements_attach_to_every_aligned_frame(self, tmp_path):
+        """Reusing a measurement is right; recomputing it is not."""
+        from lostcam.capture import (
+            CaptureOptions,
+            CaptureSession,
+            collect_depth_frames,
+        )
+        from lostcam.dataset import DatasetConfig, DatasetWriter, read_manifest
+        from lostcam.plate import PlateMapper, scan_plate
+        from lostcam.vision import FrameAnalyser
+
+        server = MockSender(port=0, width=320, height=240, fps=30,
+                            depth_size=(64, 48), depth_fps=10)
+        server.start()
+        try:
+            assert wait_for_port("127.0.0.1", server.bound_port, timeout=SETTLE)
+            source = Source("127.0.0.1", server.bound_port)
+            frames, intrinsics, _ = collect_depth_frames(source, 8, 15.0)
+            report = scan_plate(frames, intrinsics, 100.0)
+            assert report.calibration is not None
+
+            writer = DatasetWriter(tmp_path / "ds", DatasetConfig())
+            session = CaptureSession(
+                source, writer, FrameAnalyser(),
+                CaptureOptions(warmup_frames=0, max_frames=40),
+                mapper=PlateMapper(report.calibration),
+            )
+            session.start()
+            try:
+                assert wait_until(lambda: session.pipeline.written >= 40,
+                                  timeout=30.0)
+            finally:
+                session.stop()
+                writer.finalise()
+        finally:
+            server.stop()
+
+        records = read_manifest(tmp_path / "ds")
+        with_plate = [r for r in records if r.get("plate")]
+        assert with_plate, "no plate measurements were attached"
+        # The mock's synthetic print is a raised block, so it must be detected.
+        assert any(r["plate"]["object_count"] >= 1 for r in with_plate), (
+            "the synthetic print on the plate was never detected"
+        )
+        tallest = max(r["plate"]["tallest_mm"] for r in with_plate)
+        assert tallest > 5, f"tallest object measured only {tallest}mm"
+
+
 class TestSynthSamples:
     """The mock sender is the reference implementation of the schema."""
 

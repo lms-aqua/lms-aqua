@@ -14,6 +14,8 @@ import threading
 import urllib.parse
 from dataclasses import dataclass, field
 
+from .netutil import read_available
+
 DEFAULT_MAX_LINE_BYTES = 1 * 1024 * 1024
 READ_CHUNK = 16384
 
@@ -217,7 +219,7 @@ class DataPuller:
             seen_bad = 0
             while not self._stop.is_set():
                 try:
-                    chunk = response.read(READ_CHUNK)
+                    chunk = read_available(response, READ_CHUNK)
                 except (TimeoutError, OSError) as exc:
                     raise DataStreamError(f"data stream read failed: {exc}") from exc
                 if not chunk:

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .mjpeg import parse_boundary
+from .netutil import read_available
 
 READ_CHUNK = 65536
 DEFAULT_MAX_FRAME_BYTES = 8 * 1024 * 1024
@@ -260,7 +261,7 @@ class DepthPuller:
 
             while not self._stop.is_set():
                 try:
-                    chunk = response.read(READ_CHUNK)
+                    chunk = read_available(response, READ_CHUNK)
                 except (TimeoutError, OSError) as exc:
                     raise DepthError(f"depth read failed: {exc}") from exc
                 if not chunk:

@@ -21,12 +21,15 @@ from .capture import (
     build_analyser,
     build_config,
     calibrate_plate,
+    run_plate_scan,
 )
 from .dataset import DatasetError, DatasetWriter
 from .datastream import DataPuller, DataStreamError, Sample
 from .decode import DecodeError, jpeg_to_rgb
+from .depthstream import DepthError, DepthPuller
 from .discovery import discover, local_addresses
 from .pipeline import FramePipeline, Stats
+from .plate import PlateCalibration, PlateError, PlateMapper
 from .puller import ConnectionFailed, Puller, Source, probe_info, resolve_size
 from .pushserver import PushServer
 from .transform import VALID_FIT_MODES, Transform
@@ -174,6 +177,56 @@ def build_parser() -> argparse.ArgumentParser:
         "--seconds", type=float, help="stop after this long (default: until Ctrl-C)"
     )
 
+    scan = subparsers.add_parser(
+        "scan",
+        help="set up: look at an EMPTY build plate and save its geometry",
+    )
+    scan.add_argument("host", help="phone IP (or 127.0.0.1 with adb forward)")
+    scan.add_argument("--port", type=int, default=DEFAULT_PULL_PORT)
+    scan.add_argument("--token", help="shared secret, if the sender requires one")
+    scan.add_argument(
+        "--plate-mm", type=float, required=True, metavar="MM",
+        help="plate width in millimetres (Ender 3: 220, Prusa MK4: 250)",
+    )
+    scan.add_argument(
+        "--plate-depth-mm", type=float, metavar="MM",
+        help="plate depth in millimetres, if it is not square",
+    )
+    scan.add_argument(
+        "--cell-mm", type=float, default=None, metavar="MM",
+        help="height-map resolution. Default: derived from the sensor's own "
+             "sample spacing, which is what you want — a finer grid than the "
+             "sensor can fill breaks objects apart and detects nothing",
+    )
+    scan.add_argument(
+        "--frames", type=int, default=20,
+        help="depth frames to average over (default 20)",
+    )
+    scan.add_argument("--out", default="plate.json", help="where to save the profile")
+    scan.add_argument(
+        "--force", action="store_true",
+        help="save the profile even if the scan reported warnings",
+    )
+
+    plate = subparsers.add_parser(
+        "plate",
+        help="live view of what is on the plate, using a saved scan",
+    )
+    plate.add_argument("host", help="phone IP")
+    plate.add_argument("--port", type=int, default=DEFAULT_PULL_PORT)
+    plate.add_argument("--token", help="shared secret, if the sender requires one")
+    plate.add_argument("--plate", default="plate.json", help="saved scan profile")
+    plate.add_argument(
+        "--threshold-mm", type=float, default=4.0,
+        help="minimum height above the plate to count as an object (default 4)",
+    )
+    plate.add_argument(
+        "--min-mm2", type=float, default=25.0,
+        help="minimum footprint to count as an object (default 25mm²)",
+    )
+    plate.add_argument("--json", action="store_true", help="emit NDJSON, not a table")
+    plate.add_argument("--seconds", type=float, help="stop after this long")
+
     capture = subparsers.add_parser(
         "capture",
         help="record an aligned dataset (frames + depth + telemetry) for training",
@@ -228,6 +281,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     capture.add_argument("--label", help="label written on every frame record")
     capture.add_argument("--notes", default="", help="free text stored in dataset.json")
+    capture.add_argument(
+        "--plate", metavar="FILE",
+        help="saved scan profile (from 'lostcam scan'). Enables plate mapping: "
+             "per-frame object detection, heights, footprints and volumes",
+    )
+    capture.add_argument(
+        "--threshold-mm", type=float, default=4.0,
+        help="minimum height above the plate to count as an object (default 4)",
+    )
+    capture.add_argument(
+        "--min-mm2", type=float, default=25.0,
+        help="minimum object footprint in mm² (default 25)",
+    )
+    capture.add_argument(
+        "--no-height-maps", action="store_true",
+        help="measure objects but do not save the per-frame height-map rasters",
+    )
 
     subparsers.add_parser("discover", help="find LostCam senders on the network")
     subparsers.add_parser("devices", help="list Android devices visible to adb")
@@ -247,6 +317,8 @@ def main(argv: list[str] | None = None) -> int:
         "bridge": cmd_bridge,
         "record": cmd_record,
         "capture": cmd_capture,
+        "scan": cmd_scan,
+        "plate": cmd_plate,
         "discover": cmd_discover,
         "devices": cmd_devices,
         "doctor": cmd_doctor,
@@ -727,14 +799,21 @@ def cmd_record(args: argparse.Namespace) -> int:
     print(f"Recording to {out.resolve()}")
     print(f"  {out}/<channel>.csv  and  {out}/samples.jsonl")
     print(f"Source: http://{args.host}:{args.port}{puller.request_path}")
+    timer: threading.Timer | None = None
     if args.seconds:
         print(f"Stopping automatically after {args.seconds:g}s.")
-        threading.Timer(args.seconds, puller.stop).start()
+        timer = threading.Timer(args.seconds, puller.stop)
+        # Daemon and cancelled on exit: otherwise a recording that ends early
+        # keeps the process alive until the timer fires.
+        timer.daemon = True
+        timer.start()
     print()
 
     try:
         return _run_data_puller(args, puller, bridge.handle)
     finally:
+        if timer is not None:
+            timer.cancel()
         bridge.close()
         _warn_about_skipped_columns(bridge)
         print(f"Recording written to {out.resolve()}")
@@ -771,6 +850,155 @@ def _split_host_port(value: str, default_port: int) -> tuple[str, int]:
         except ValueError:
             return value, default_port
     return value, default_port
+
+
+# -- plate scanning and mapping ----------------------------------------------
+
+
+def cmd_scan(args: argparse.Namespace) -> int:
+    source = Source(host=args.host, port=args.port, token=args.token)
+
+    info = probe_info(source)
+    if info and not _sender_offers_depth(info):
+        print(
+            "error: this sender is not offering depth.\n"
+            "  Plate mapping needs a LiDAR device (iPhone Pro / iPad Pro) with the\n"
+            "  depth channel switched on in the app.",
+            file=sys.stderr,
+        )
+        return 2
+
+    print("Point the camera at the build plate and CLEAR IT COMPLETELY.")
+    print("The scan measures the empty plate, so anything left on it becomes part")
+    print("of the plate and every later height will be wrong.\n")
+    print(f"Scanning {args.frames} depth frames from {source.host}:{source.port}…")
+
+    report = run_plate_scan(
+        source, args.plate_mm, args.plate_depth_mm,
+        cell_mm=args.cell_mm, frames=args.frames,
+    )
+
+    if not report.ok:
+        print("\nScan failed:", file=sys.stderr)
+        for problem in report.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 4
+
+    print("\n" + report.summary())
+
+    if report.warnings and not args.force:
+        print(
+            "\nThe scan produced warnings. Fix them and rescan, or pass --force to\n"
+            "save it anyway — the measurements will still be produced, but their\n"
+            "accuracy will be limited by whatever the warnings describe.",
+            file=sys.stderr,
+        )
+        return 5
+
+    assert report.calibration is not None
+    path = report.calibration.save(args.out)
+    print(f"\nSaved plate profile to {path}")
+    print(f"Now record with it:\n  lostcam capture {args.host} --plate {path} "
+          f"--out runs/my-print")
+    return 0
+
+
+def cmd_plate(args: argparse.Namespace) -> int:
+    """Live plate readout — the fastest way to check a scan is any good."""
+    try:
+        calibration = PlateCalibration.load(args.plate)
+    except PlateError as exc:
+        print(f"error: {exc}\n\nRun 'lostcam scan <host> --plate-mm 220' first.",
+              file=sys.stderr)
+        return 2
+
+    source = Source(host=args.host, port=args.port, token=args.token)
+    mapper = PlateMapper(calibration, threshold_mm=args.threshold_mm,
+                         min_footprint_mm2=args.min_mm2)
+    puller = DepthPuller(source.host, source.port, token=source.token)
+
+    if not args.json:
+        print(f"Plate: {calibration.plate_width_mm:.0f} x "
+              f"{calibration.plate_height_mm:.0f} mm, "
+              f"{calibration.plane.tilt_degrees:.0f}° off head-on, "
+              f"grid {calibration.cell_mm:g} mm")
+        print("Press Ctrl-C to stop.\n")
+
+    state = {"last": 0.0}
+
+    def on_frame(frame) -> None:
+        try:
+            result = mapper.process(frame.millimetres)
+        except PlateError as exc:
+            print(f"  plate error: {exc}", file=sys.stderr)
+            return
+
+        if args.json:
+            document = dict(result.as_dict(), t=frame.timestamp_ms)
+            print(json.dumps(document, separators=(",", ":")), flush=True)
+            return
+
+        # Throttle the table so a 10 Hz depth stream does not scroll away.
+        now = time.monotonic()
+        if now - state["last"] < 1.0:
+            return
+        state["last"] = now
+        _print_plate_table(result, mapper)
+
+    stop = threading.Event()
+
+    def handler(*_: object) -> None:
+        puller.stop()
+        stop.set()
+
+    try:
+        signal.signal(signal.SIGINT, handler)
+    except ValueError:  # pragma: no cover - not on the main thread
+        pass
+
+    timer: threading.Timer | None = None
+    if args.seconds:
+        timer = threading.Timer(args.seconds, handler)
+        # Daemon, so a stream that dies early cannot hold the process open until
+        # the timer fires — which for --seconds 3600 would be a one-hour hang.
+        timer.daemon = True
+        timer.start()
+
+    try:
+        puller.run_once(on_frame)
+    except DepthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
+    finally:
+        if timer is not None:
+            timer.cancel()
+    return 0
+
+
+def _print_plate_table(result, mapper: PlateMapper) -> None:
+    coverage = result.coverage * 100
+    print(
+        f"[{result.object_count} object(s)]  tallest {result.tallest_mm:6.1f} mm  "
+        f"occupied {result.occupied_mm2:8.0f} mm²  "
+        f"volume {result.total_volume_mm3 / 1000:8.1f} cm³  "
+        f"map {coverage:4.0f}%"
+    )
+    if not result.objects:
+        # An empty plate is the expected state half the time, and saying so beats
+        # printing nothing and looking hung.
+        print("    plate is clear")
+        return
+    print(f"    {'id':>4} {'x,y mm':>14} {'size mm':>13} {'h mm':>7} "
+          f"{'area mm²':>9} {'vol cm³':>8} {'solid':>6}")
+    for item in result.objects[:8]:
+        label = item.track_id if item.track_id is not None else item.object_id
+        print(
+            f"    {label:>4} "
+            f"{item.centre_u_mm:6.0f},{item.centre_v_mm:<7.0f} "
+            f"{item.bbox_u_mm:5.0f}x{item.bbox_v_mm:<7.0f} "
+            f"{item.height_max_mm:7.1f} {item.footprint_mm2:9.0f} "
+            f"{item.volume_mm3 / 1000:8.1f} {item.solidity:6.2f}"
+        )
 
 
 # -- dataset capture ---------------------------------------------------------
@@ -818,7 +1046,34 @@ def cmd_capture(args: argparse.Namespace) -> int:
         if args.channels else None
     )
 
-    config = build_config(source, analyser, args.notes, want_depth, info or {})
+    # Plate mapping, when a scan profile was supplied.
+    plate_calibration = None
+    mapper = None
+    if args.plate:
+        try:
+            plate_calibration = PlateCalibration.load(args.plate)
+        except PlateError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if not want_depth:
+            print(
+                "error: --plate needs the depth stream, which this sender is not\n"
+                "  offering. Enable the depth channel in the app, or drop --plate.",
+                file=sys.stderr,
+            )
+            return 2
+        mapper = PlateMapper(plate_calibration, threshold_mm=args.threshold_mm,
+                             min_footprint_mm2=args.min_mm2)
+        print(f"Plate mapping: {plate_calibration.plate_width_mm:.0f}x"
+              f"{plate_calibration.plate_height_mm:.0f} mm at "
+              f"{plate_calibration.cell_mm:g} mm/cell, "
+              f"objects over {args.threshold_mm:g} mm tall")
+
+    config = build_config(
+        source, analyser, args.notes, want_depth, info or {},
+        plate=plate_calibration,
+        save_height_maps=not args.no_height_maps,
+    )
     try:
         writer = DatasetWriter(args.out, config, overwrite=args.overwrite)
     except DatasetError as exc:
@@ -835,7 +1090,7 @@ def cmd_capture(args: argparse.Namespace) -> int:
     session = CaptureSession(
         source, writer, analyser, options,
         want_depth=want_depth, want_data=not args.no_data,
-        channels=channels, hz=args.hz,
+        channels=channels, hz=args.hz, mapper=mapper,
     )
     session.pipeline.label = args.label
 

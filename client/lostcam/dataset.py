@@ -114,16 +114,24 @@ class DatasetConfig:
     calibration: Calibration | None = None
     plate_reference_mm: float | None = None
     save_depth: bool = True
+    # Off unless a plate calibration was supplied: a height map is meaningless
+    # without one, and defaulting to True created an empty directory for every
+    # non-plate recording.
+    save_height_maps: bool = False
     jpeg_passthrough: bool = True
     notes: str = ""
     sender_info: dict = field(default_factory=dict)
+    plate_calibration: dict | None = None
 
     def as_dict(self) -> dict:
         document: dict = {
             "source": self.source,
             "save_depth": self.save_depth,
+            "save_height_maps": self.save_height_maps,
             "jpeg_passthrough": self.jpeg_passthrough,
         }
+        if self.plate_calibration:
+            document["plate"] = self.plate_calibration
         if self.roi:
             document["roi"] = self.roi.as_dict()
         if self.calibration:
@@ -173,13 +181,17 @@ class DatasetWriter:
 
         self.frames_dir = self.root / "frames"
         self.depth_dir = self.root / "depth"
+        self.height_maps_dir = self.root / "height_maps"
         self.frames_dir.mkdir(parents=True, exist_ok=True)
         if self.config.save_depth:
             self.depth_dir.mkdir(parents=True, exist_ok=True)
+        if self.config.save_height_maps:
+            self.height_maps_dir.mkdir(parents=True, exist_ok=True)
 
         self.started_at = datetime.now(timezone.utc)
         self.frame_count = 0
         self.depth_count = 0
+        self.height_map_count = 0
         self.event_count = 0
         self._first_timestamp: int | None = None
         self._last_timestamp: int | None = None
@@ -197,7 +209,10 @@ class DatasetWriter:
                     depth: np.ndarray | None = None,
                     depth_timestamp_ms: int | None = None,
                     depth_intrinsics: tuple[float, float, float, float] | None = None,
-                    label: str | None = None) -> int:
+                    label: str | None = None,
+                    plate: dict | None = None,
+                    height_map: np.ndarray | None = None,
+                    height_map_cell_mm: float | None = None) -> int:
         """Write one frame and its manifest record. Returns the frame index."""
         with self._lock:
             self.frame_count += 1
@@ -245,6 +260,25 @@ class DatasetWriter:
         if samples:
             record["samples"] = samples
 
+        # The measured plate: object list plus whole-plate totals, in millimetres.
+        if plate is not None:
+            record["plate"] = plate
+
+        if height_map is not None and self.config.save_height_maps:
+            map_path = self.height_maps_dir / f"{name}.u16"
+            map_path.write_bytes(height_map.astype("<u2").tobytes())
+            self.height_map_count += 1
+            record["height_map"] = {
+                "file": f"height_maps/{name}.u16",
+                "width": int(height_map.shape[1]),
+                "height": int(height_map.shape[0]),
+                # Offset by 1 so 0 can mean "no measurement" — see
+                # HeightMap.to_u16_mm. A reader must subtract 1 from non-zero
+                # cells to get millimetres.
+                "format": "u16mm+1",
+                "cell_mm": height_map_cell_mm,
+            }
+
         self._manifest.write(json.dumps(record, separators=(",", ":")) + "\n")
         # Flushed per frame: a recording interrupted by a crash or a power cut is
         # exactly when the data matters, and a buffered manifest loses the tail.
@@ -268,19 +302,32 @@ class DatasetWriter:
     # -- metadata -----------------------------------------------------------
 
     def _write_metadata(self) -> None:
+        # Only describe the directories this recording actually produces, so the
+        # metadata cannot promise a height_maps/ that does not exist.
+        layout = {
+            "manifest": self.MANIFEST,
+            "events": self.EVENTS,
+            "frames": "frames/NNNNNN.jpg",
+        }
+        if self.config.save_depth:
+            layout["depth"] = (
+                "depth/NNNNNN.u16 (row-major u16 little-endian millimetres, "
+                "0 = no measurement)"
+            )
+        if self.config.save_height_maps:
+            layout["height_maps"] = (
+                "height_maps/NNNNNN.u16 (top-down orthographic grid in plate "
+                "coordinates, u16 little-endian, 0 = no measurement, otherwise "
+                "millimetres above the plate PLUS ONE)"
+            )
+
         document = {
             "product": "LostCam",
             "dataset_version": 1,
             "protocol": 2,
             "started_at": self.started_at.isoformat(),
             "config": self.config.as_dict(),
-            "layout": {
-                "manifest": self.MANIFEST,
-                "events": self.EVENTS,
-                "frames": "frames/NNNNNN.jpg",
-                "depth": "depth/NNNNNN.u16 (row-major u16 little-endian "
-                         "millimetres, 0 = no measurement)",
-            },
+            "layout": layout,
         }
         (self.root / self.METADATA).write_text(
             json.dumps(document, indent=2) + "\n", encoding="utf-8"
@@ -306,6 +353,7 @@ class DatasetWriter:
         summary = {
             "frames": self.frame_count,
             "depth_frames": self.depth_count,
+            "height_maps": self.height_map_count,
             "events": self.event_count,
             "duration_ms": duration_ms,
             "average_fps": round(self.frame_count / (duration_ms / 1000.0), 3)
@@ -348,6 +396,27 @@ def read_manifest(root: str | Path) -> list[dict]:
                 # like; the rest of the dataset is still perfectly good.
                 continue
     return records
+
+
+def load_height_map(root: str | Path, record: dict) -> np.ndarray | None:
+    """Load a frame's height map as float32 millimetres, NaN where unmeasured.
+
+    Undoes the ``+1`` offset the u16 export uses to keep 0 meaning "absent".
+    Returning NaN rather than 0 for absent cells matters: an occluded cell is not
+    a flat one, and averaging zeros into a height would understate every object.
+    """
+    meta = record.get("height_map")
+    if not isinstance(meta, dict):
+        return None
+    path = Path(root) / meta["file"]
+    if not path.exists():
+        return None
+    raw = np.frombuffer(path.read_bytes(), dtype="<u2")
+    grid = raw.reshape(int(meta["height"]), int(meta["width"]))
+    out = np.full(grid.shape, np.nan, dtype=np.float32)
+    measured = grid > 0
+    out[measured] = grid[measured].astype(np.float32) - 1.0
+    return out
 
 
 def load_depth(root: str | Path, record: dict) -> np.ndarray | None:

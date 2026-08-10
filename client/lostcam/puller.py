@@ -16,6 +16,7 @@ import urllib.parse
 from dataclasses import dataclass
 
 from .mjpeg import MJPEGError, MJPEGParser, parse_boundary
+from .netutil import read_available
 from .pipeline import FramePipeline
 
 DEFAULT_PORT = 4747
@@ -155,7 +156,7 @@ class Puller:
     def _pump(self, response: http.client.HTTPResponse, parser: MJPEGParser) -> None:
         while not self._stop.is_set():
             try:
-                chunk = response.read(READ_CHUNK)
+                chunk = read_available(response, READ_CHUNK)
             except TimeoutError as exc:
                 raise ConnectionFailed(f"read timed out: {exc}") from exc
             except OSError as exc:

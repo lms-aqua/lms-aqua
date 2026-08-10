@@ -12,6 +12,7 @@ import base64
 import hmac
 import json
 import socketserver
+import sys
 import threading
 import urllib.parse
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 from . import wsproto
+from .netutil import is_disconnect
 from .tls import ensure_cert, server_context
 
 DEFAULT_PORT = 8443
@@ -31,6 +33,17 @@ class _Server(socketserver.ThreadingTCPServer):
     # A phone that walks out of Wi-Fi range leaves a half-open socket; without
     # this the accept queue fills with sockets nobody will ever read.
     request_queue_size = 16
+
+    def handle_error(self, request, client_address) -> None:
+        """Stay quiet about clients that simply hung up.
+
+        A phone leaving Wi-Fi mid-stream is the normal way these connections end,
+        and the default behaviour is to print a traceback for it. Anything that is
+        not a teardown is still reported — swallowing real errors would hide
+        genuine faults.
+        """
+        if not is_disconnect(sys.exc_info()[1]):
+            super().handle_error(request, client_address)
 
 
 FrameHandler = Callable[[bytes], None]

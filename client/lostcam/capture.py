@@ -20,6 +20,14 @@ from .datastream import DataPuller, DataStreamError
 from .decode import DecodeError, jpeg_to_rgb
 from .depthstream import DepthError, DepthPuller
 from .pipeline import Stats
+from .plate import (
+    PlateCalibration,
+    PlateError,
+    PlateMapper,
+    PlateState,
+    ScanReport,
+    scan_plate,
+)
 from .puller import ConnectionFailed, Puller, Source
 from .vision import ROI, Calibration, FrameAnalyser
 
@@ -43,17 +51,27 @@ class _RecordingPipeline:
 
     def __init__(self, writer: DatasetWriter, analyser: FrameAnalyser,
                  aligner: SampleAligner, depth: DepthHolder,
-                 options: CaptureOptions) -> None:
+                 options: CaptureOptions,
+                 mapper: PlateMapper | None = None) -> None:
         self.writer = writer
         self.analyser = analyser
         self.aligner = aligner
         self.depth = depth
         self.options = options
+        self.mapper = mapper
         self.stats = Stats()
         self.written = 0
         self.skipped = 0
         self.seen = 0
         self.label: str | None = None
+        self.last_plate: PlateState | None = None
+        self.plate_errors = 0
+        self.plate_frames = 0
+        self.plate_reused = 0
+        self.last_plate_error = ""
+        self._mapped_depth_timestamp: int | None = None
+        self._mapped_plate: PlateState | None = None
+        self._mapped_height_map = None
         self._stop = threading.Event()
 
     @property
@@ -94,6 +112,42 @@ class _RecordingPipeline:
                 return False
             metrics = self.analyser.analyse(frame, depth_array)
 
+        # Plate mapping: what is on the plate, measured in millimetres. Only when
+        # a calibration was supplied — it cannot be guessed from a single frame.
+        plate: PlateState | None = None
+        height_map = None
+        if self.mapper is not None and depth_array is not None:
+            # Depth arrives at roughly a third of the video rate, so the same
+            # raster gets offered to several consecutive frames. Mapping it once
+            # per depth frame rather than once per video frame is what keeps the
+            # cost bounded, stops the dataset filling with identical height maps,
+            # and makes the tracker's age_frames count observations rather than
+            # video frames.
+            is_new_depth = depth_timestamp != self._mapped_depth_timestamp
+            if is_new_depth:
+                self._mapped_depth_timestamp = depth_timestamp
+                try:
+                    self._mapped_plate = self.mapper.process(depth_array)
+                    self._mapped_height_map = self.mapper.last_height_map
+                    self.plate_frames += 1
+                except PlateError as exc:
+                    # A single bad depth frame must not end a multi-hour capture.
+                    self.plate_errors += 1
+                    self.last_plate_error = str(exc)
+                    self._mapped_plate = None
+                    self._mapped_height_map = None
+            else:
+                self.plate_reused += 1
+
+            # The measurements are attached to every frame the depth aligns with —
+            # they are the best available answer for that moment — but the raster
+            # itself is written once, by the frame that triggered the mapping.
+            plate = self._mapped_plate
+            if plate is not None:
+                self.last_plate = plate
+            if is_new_depth:
+                height_map = self._mapped_height_map
+
         self.writer.write_frame(
             jpeg=jpeg,
             timestamp_ms=timestamp,
@@ -103,6 +157,11 @@ class _RecordingPipeline:
             depth_timestamp_ms=depth_timestamp if depth_array is not None else None,
             depth_intrinsics=depth_intrinsics,
             label=self.label,
+            plate=plate.as_dict() if plate is not None else None,
+            height_map=height_map.to_u16_mm() if height_map is not None else None,
+            height_map_cell_mm=(
+                self.mapper.calibration.cell_mm if self.mapper is not None else None
+            ),
         )
         self.written += 1
         self.stats.frames += 1
@@ -115,7 +174,8 @@ class CaptureSession:
     def __init__(self, source: Source, writer: DatasetWriter,
                  analyser: FrameAnalyser, options: CaptureOptions,
                  want_depth: bool = True, want_data: bool = True,
-                 channels: list[str] | None = None, hz: int | None = None) -> None:
+                 channels: list[str] | None = None, hz: int | None = None,
+                 mapper: PlateMapper | None = None) -> None:
         self.source = source
         self.writer = writer
         self.analyser = analyser
@@ -124,11 +184,12 @@ class CaptureSession:
         self.want_data = want_data
         self.channels = channels
         self.hz = hz
+        self.mapper = mapper
 
         self.aligner = SampleAligner()
         self.depth_holder = DepthHolder()
         self.pipeline = _RecordingPipeline(writer, analyser, self.aligner,
-                                          self.depth_holder, options)
+                                          self.depth_holder, options, mapper)
         self.video = Puller(source, self.pipeline)
         self.data: DataPuller | None = None
         self.depth: DepthPuller | None = None
@@ -220,10 +281,18 @@ class CaptureSession:
             f"{self.writer.depth_count} depth",
             f"{len(self.aligner.channels)} channels",
         ]
+        plate = self.pipeline.last_plate
+        if plate is not None:
+            parts.append(
+                f"plate: {plate.object_count} object(s), "
+                f"tallest {plate.tallest_mm:.0f}mm"
+            )
         if self.pipeline.skipped:
             parts.append(f"{self.pipeline.skipped} skipped by --every")
         if self.pipeline.stats.decode_errors:
             parts.append(f"{self.pipeline.stats.decode_errors} decode errors")
+        if self.pipeline.plate_errors:
+            parts.append(f"{self.pipeline.plate_errors} plate errors")
         return ", ".join(parts)
 
 
@@ -266,6 +335,72 @@ def _quietly(function, *args) -> None:
         return
 
 
+def collect_depth_frames(source: Source, count: int = 20,
+                         timeout: float = 30.0
+                         ) -> tuple[list, tuple | None, str | None]:
+    """Gather depth frames and their intrinsics, for the setup scan.
+
+    Returns ``(frames, intrinsics, error)``. The error is surfaced rather than
+    swallowed: a 401, a wrong port and a device without LiDAR all produce "no
+    frames", and telling the user the wrong one of those wastes their afternoon.
+
+    The intrinsics come from the stream's own headers rather than being guessed —
+    they describe the depth raster, which is not the colour camera's.
+    """
+    frames: list = []
+    intrinsics: list = [None]
+    failure: list = [None]
+    puller = DepthPuller(source.host, source.port, token=source.token)
+
+    def on_frame(frame) -> None:
+        frames.append(frame.millimetres)
+        if frame.intrinsics is not None:
+            intrinsics[0] = frame.intrinsics
+        if len(frames) >= count:
+            puller.stop()
+
+    def run() -> None:
+        try:
+            puller.run_once(on_frame)
+        except DepthError as exc:
+            failure[0] = str(exc)
+        except (ConnectionFailed, OSError) as exc:
+            failure[0] = f"could not reach {source.host}:{source.port} ({exc})"
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + timeout
+    while thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    puller.stop()
+    thread.join(timeout=2.0)
+    return frames, intrinsics[0], failure[0]
+
+
+def run_plate_scan(source: Source, plate_width_mm: float,
+                   plate_height_mm: float | None = None,
+                   cell_mm: float | None = None, frames: int = 20,
+                   timeout: float = 30.0) -> ScanReport:
+    """The setup step: look at an empty plate and work out its geometry."""
+    collected, intrinsics, failure = collect_depth_frames(source, frames, timeout)
+    if not collected:
+        if failure:
+            # Report what actually went wrong, not an assumption about hardware.
+            return ScanReport(None, 0, [failure])
+        return ScanReport(None, 0, [
+            "no depth frames arrived, and the connection reported no error. The "
+            "sender must be a LiDAR device (iPhone/iPad Pro) with the depth "
+            "channel switched on in the app."
+        ])
+    if intrinsics is None:
+        return ScanReport(None, len(collected), [
+            "the depth stream carried no X-LostCam-Intrinsics header, so the "
+            "raster cannot be unprojected into millimetres"
+        ])
+    return scan_plate(collected, intrinsics, plate_width_mm, plate_height_mm,
+                      cell_mm=cell_mm)
+
+
 def build_analyser(roi_text: str | None, plate_mm: float | None,
                    plate_height_mm: float | None) -> FrameAnalyser:
     """Assemble the analyser from the CLI's calibration flags."""
@@ -282,13 +417,19 @@ def build_analyser(roi_text: str | None, plate_mm: float | None,
 
 
 def build_config(source: Source, analyser: FrameAnalyser, notes: str,
-                 save_depth: bool, sender_info: dict | None) -> DatasetConfig:
+                 save_depth: bool, sender_info: dict | None,
+                 plate: PlateCalibration | None = None,
+                 save_height_maps: bool = True) -> DatasetConfig:
     return DatasetConfig(
         source=source.url,
         roi=analyser.roi,
         calibration=analyser.calibration,
         plate_reference_mm=analyser.plate_reference_mm,
         save_depth=save_depth,
+        # Height maps are only meaningful with a plate calibration, so they are
+        # off when there is not one rather than writing empty grids.
+        save_height_maps=save_height_maps and plate is not None,
         notes=notes,
         sender_info=sender_info or {},
+        plate_calibration=plate.as_dict() if plate is not None else None,
     )

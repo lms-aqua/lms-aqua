@@ -98,6 +98,8 @@ at once. Install Unity Capture and pass `--backend unitycapture` if you need bot
 | `lostcam data <ip>` | Print the sensor/AR channel as NDJSON (pipe it to `jq`) |
 | `lostcam bridge <ip> --osc --udp --ws` | Fan telemetry out to other applications |
 | `lostcam record <ip> --out dir` | Record telemetry to CSV + JSONL |
+| `lostcam scan <ip> --plate-mm 220` | Set up: measure the **empty** build plate and save its geometry |
+| `lostcam plate <ip> --plate plate.json` | Live readout of what is on the plate, in millimetres |
 | `lostcam capture <ip> --out dir` | Record an aligned **dataset**: frames + depth + telemetry |
 | `lostcam discover` | Find senders on the LAN |
 | `lostcam devices` | List Android devices visible to `adb` |
@@ -189,6 +191,45 @@ why that clock is specified the way it is.
 
 Full format, reading code, and the data-quality checklist:
 **[docs/DATASET.md](docs/DATASET.md)**.
+
+## Mapping the build plate
+
+Scan the empty plate once, and every frame after that carries measurements of
+whatever is on it:
+
+```bash
+lostcam scan 192.168.1.42 --plate-mm 220 --out plate.json   # plate must be EMPTY
+lostcam plate 192.168.1.42 --plate plate.json               # live readout
+lostcam capture 192.168.1.42 --plate plate.json --out runs/benchy
+```
+
+```
+[2 object(s)]  tallest   41.5 mm  occupied     3400 mm²  volume     87.2 cm³  map  93%
+      id         x,y mm       size mm    h mm  area mm²  vol cm³  solid
+       1        -34,-12       62x58       41.5      2938     78.1   0.86
+       2         46,-38       22x22       20.0       462      9.1   0.97
+```
+
+Per object, per frame: position on the bed, bounding size, max and mean height,
+footprint area, volume, and **solidity** — the fraction of its bounding box the
+object fills. A cube reads ~0.97; a sprawl of spaghetti reads ~0.3, which is what
+makes it a usable failure signal.
+
+Two things make the numbers trustworthy. The scan fits a **plane** rather than a
+single distance, so an angled camera still reads true heights — subtracting one
+distance would report half of an empty plate as below itself. And every frame is
+resampled into a **top-down orthographic grid** in plate coordinates, which
+removes perspective so areas and volumes are sums rather than estimates, and
+produces a fixed-scale 2.5D height map that is a far better model input than a
+perspective view.
+
+The grid's cell size is derived from the sensor, not chosen for tidiness. An
+iPhone samples about every 2.2 mm at working distance, so a 1 mm grid leaves gaps
+between measured cells and detects **nothing at all** — the plate reports empty
+with a 60 mm cube sitting on it. `lostcam scan` computes the right cell size and
+warns if you override it with something too fine.
+
+Setup, accuracy limits and reading the height maps: **[docs/PLATE.md](docs/PLATE.md)**.
 
 ## Security
 

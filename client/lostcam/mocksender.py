@@ -17,6 +17,7 @@ import json
 import math
 import socketserver
 import struct
+import sys
 import threading
 import time
 import urllib.parse
@@ -26,6 +27,7 @@ import numpy as np
 
 from .decode import rgb_to_jpeg
 from .discovery import DISCOVERY_PORT, Responder
+from .netutil import is_disconnect
 
 BOUNDARY = "lostcamframe"
 DEPTH_BOUNDARY = "lostcamdepth"
@@ -249,6 +251,17 @@ class MockSender:
             daemon_threads = True
             allow_reuse_address = True
 
+            def handle_error(self, request, client_address) -> None:
+                """Stay quiet about clients that simply hung up.
+
+                A consumer disconnecting mid-stream is the normal way these
+                streams end, and socketserver's default is to dump a traceback
+                for it. Anything that is *not* a teardown still gets reported,
+                because swallowing real errors would hide genuine faults.
+                """
+                if not is_disconnect(sys.exc_info()[1]):
+                    super().handle_error(request, client_address)
+
         self._server = Server((self.host, self.port), handler)
         self._thread = threading.Thread(
             target=self._server.serve_forever, kwargs={"poll_interval": 0.2}, daemon=True
@@ -362,17 +375,16 @@ def _make_handler(sender: MockSender) -> type[BaseHTTPRequestHandler]:
             fps = max(1, _int_param(query, "fps", sender.fps))
             quality = _int_param(query, "q", sender.quality)
 
-            self.send_response(200)
-            self.send_header(
-                "Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}"
-            )
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-
             interval = 1.0 / fps
             next_at = time.monotonic()
             phase = 0.0
             try:
+                self.send_response(200)
+                self.send_header(
+                    "Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}"
+                )
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
                 while True:
                     jpeg = rgb_to_jpeg(render_pattern(width, height, phase), quality)
                     header = (
@@ -395,16 +407,15 @@ def _make_handler(sender: MockSender) -> type[BaseHTTPRequestHandler]:
             wanted = {c.strip() for c in requested.split(",") if c.strip()}
             hz = max(1, min(240, _int_param(query, "hz", 30)))
 
-            self.send_response(200)
-            self.send_header("Content-Type", "application/x-ndjson")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-
             interval = 1.0 / hz
             next_at = time.monotonic()
             phase = 0.0
             seq = 1
             try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
                 while True:
                     t_ms = int(time.monotonic() * 1000)
                     records = synth_samples(phase, seq, t_ms)
@@ -434,18 +445,17 @@ def _make_handler(sender: MockSender) -> type[BaseHTTPRequestHandler]:
 
         def _stream_depth(self) -> None:
             width, height = sender.depth_size
-            self.send_response(200)
-            self.send_header(
-                "Content-Type",
-                f"multipart/x-mixed-replace; boundary={DEPTH_BOUNDARY}",
-            )
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-
             interval = 1.0 / max(1, sender.depth_fps)
             next_at = time.monotonic()
             phase = 0.0
             try:
+                self.send_response(200)
+                self.send_header(
+                    "Content-Type",
+                    f"multipart/x-mixed-replace; boundary={DEPTH_BOUNDARY}",
+                )
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
                 while True:
                     raster = synth_depth(width, height, phase)
                     payload = raster.astype("<u2").tobytes()
@@ -469,15 +479,14 @@ def _make_handler(sender: MockSender) -> type[BaseHTTPRequestHandler]:
 
         def _stream_audio(self) -> None:
             rate = sender.audio_rate
-            self.send_response(200)
-            self.send_header("Content-Type", f"audio/L16; rate={rate}; channels=1")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-
             chunk_samples = rate // 20  # 50 ms
             step = 2 * math.pi * 440.0 / rate
             index = 0
             try:
+                self.send_response(200)
+                self.send_header("Content-Type", f"audio/L16; rate={rate}; channels=1")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
                 while True:
                     values = [
                         int(12000 * math.sin(step * (index + i)))

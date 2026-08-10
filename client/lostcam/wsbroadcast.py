@@ -14,12 +14,14 @@ from __future__ import annotations
 import json
 import socket
 import socketserver
+import sys
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
 
 from . import wsproto
 from .datastream import Sample
+from .netutil import is_disconnect
 
 DEFAULT_PORT = 8765
 MAX_QUEUED_BYTES = 1 * 1024 * 1024
@@ -76,6 +78,11 @@ class WSBroadcastServer:
         class Server(socketserver.ThreadingTCPServer):
             daemon_threads = True
             allow_reuse_address = True
+
+            def handle_error(self, request, client_address) -> None:
+                """A dashboard closing its tab is not an error worth a traceback."""
+                if not is_disconnect(sys.exc_info()[1]):
+                    super().handle_error(request, client_address)
 
         self._server = Server((self.host, self.port), handler)
         self._thread = threading.Thread(

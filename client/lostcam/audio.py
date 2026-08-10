@@ -20,6 +20,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .netutil import read_available
+
 BYTES_PER_SAMPLE = 2  # s16le
 
 
@@ -115,7 +117,7 @@ class AudioPuller:
                 )
             self.format = parse_audio_content_type(response.getheader("Content-Type"))
             while not self._stop.is_set():
-                chunk = response.read(self.chunk_bytes)
+                chunk = read_available(response, self.chunk_bytes)
                 if not chunk:
                     return
                 self.bytes_in += len(chunk)
