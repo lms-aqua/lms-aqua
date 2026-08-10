@@ -243,7 +243,13 @@ final class MathsTests: XCTestCase {
 
     func testDepthConversionToMillimetres() {
         XCTAssertEqual(Maths.depthMillimetres(metres: 1.0), 1000)
-        XCTAssertEqual(Maths.depthMillimetres(metres: 0.2345), 234)
+        // Deliberately not a value that lands on a half-millimetre: 0.2345 m is
+        // not representable in Float and comes out a hair *above* 234.5 mm, so
+        // asserting either 234 or 235 would be testing the binary
+        // representation of the literal rather than the conversion. The contract
+        // is "nearest millimetre", so the test uses values that have one.
+        XCTAssertEqual(Maths.depthMillimetres(metres: 0.2344), 234)
+        XCTAssertEqual(Maths.depthMillimetres(metres: 0.2346), 235)
     }
 
     func testDepthZeroMeansNoMeasurement() {
