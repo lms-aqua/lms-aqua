@@ -30,6 +30,7 @@ from .depthstream import DepthError, DepthPuller
 from .discovery import discover, local_addresses
 from .pipeline import FramePipeline, Stats
 from .plate import PlateCalibration, PlateError, PlateMapper
+from .plateweb import PlateWebServer
 from .puller import ConnectionFailed, Puller, Source, probe_info, resolve_size
 from .pushserver import PushServer
 from .transform import VALID_FIT_MODES, Transform
@@ -38,6 +39,7 @@ from .vision import CalibrationError
 from .wsbroadcast import WSBroadcastServer
 
 FALLBACK_SIZE = (1280, 720)
+DEFAULT_WEB_PORT = 8770
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -204,6 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument(
             "--min-age-frames", type=int, default=3, metavar="N",
             help="observations before an object is marked confirmed (default 3)",
+        )
+        sub.add_argument(
+            "--web", nargs="?", const=str(DEFAULT_WEB_PORT), metavar="PORT",
+            help=f"serve a live dashboard to leave open next to the printer "
+                 f"(default port {DEFAULT_WEB_PORT})",
         )
 
     scan = subparsers.add_parser(
@@ -886,6 +893,27 @@ def _split_host_port(value: str, default_port: int) -> tuple[str, int]:
 # -- plate scanning and mapping ----------------------------------------------
 
 
+def _start_web(args: argparse.Namespace) -> PlateWebServer | None:
+    """Start the live dashboard if --web was given."""
+    if not getattr(args, "web", None):
+        return None
+    try:
+        port = int(args.web)
+    except ValueError:
+        print(f"error: --web wants a port number, got {args.web!r}", file=sys.stderr)
+        return None
+    server = PlateWebServer(port=port)
+    try:
+        server.start()
+    except OSError as exc:
+        # A busy port must not take the measurement run down with it.
+        print(f"warning: could not start the dashboard on port {port} ({exc}); "
+              f"continuing without it", file=sys.stderr)
+        return None
+    print(f"Dashboard: {server.url}")
+    return server
+
+
 def _build_mapper(calibration: PlateCalibration,
                   args: argparse.Namespace) -> PlateMapper:
     """Assemble a PlateMapper from the machinery-filter flags."""
@@ -960,6 +988,7 @@ def cmd_plate(args: argparse.Namespace) -> int:
 
     source = Source(host=args.host, port=args.port, token=args.token)
     mapper = _build_mapper(calibration, args)
+    web = _start_web(args)
     puller = DepthPuller(source.host, source.port, token=source.token)
 
     if not args.json:
@@ -977,6 +1006,10 @@ def cmd_plate(args: argparse.Namespace) -> int:
         except PlateError as exc:
             print(f"  plate error: {exc}", file=sys.stderr)
             return
+
+        if web is not None:
+            web.publish_state(result, mapper.last_height_map, calibration,
+                              frame.timestamp_ms)
 
         if args.json:
             document = dict(result.as_dict(), t=frame.timestamp_ms)
@@ -1017,6 +1050,8 @@ def cmd_plate(args: argparse.Namespace) -> int:
     finally:
         if timer is not None:
             timer.cancel()
+        if web is not None:
+            web.stop()
     return 0
 
 
@@ -1131,10 +1166,22 @@ def cmd_capture(args: argparse.Namespace) -> int:
         warmup_frames=max(0, args.warmup),
         analyse=not args.no_metrics,
     )
+    web = _start_web(args) if mapper is not None else None
+    if web is not None and plate_calibration is not None:
+        # Publishing from the pipeline keeps the dashboard showing exactly the
+        # measurements being written to the dataset, not a second computation.
+        def publish(state, height_map) -> None:
+            web.publish_state(state, height_map, plate_calibration)
+
+        session_publisher = publish
+    else:
+        session_publisher = None
+
     session = CaptureSession(
         source, writer, analyser, options,
         want_depth=want_depth, want_data=not args.no_data,
         channels=channels, hz=args.hz, mapper=mapper,
+        on_plate=session_publisher,
     )
     session.pipeline.label = args.label
 
@@ -1175,6 +1222,8 @@ def cmd_capture(args: argparse.Namespace) -> int:
         # No return from this block: a return here would swallow whatever
         # exception brought us in, and losing that would hide the real fault.
         session.stop()
+        if web is not None:
+            web.stop()
         summary = writer.finalise()
         print(f"\nWrote {summary['frames']} frames "
               f"({summary['depth_frames']} with depth) over "

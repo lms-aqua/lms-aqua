@@ -100,6 +100,7 @@ at once. Install Unity Capture and pass `--backend unitycapture` if you need bot
 | `lostcam record <ip> --out dir` | Record telemetry to CSV + JSONL |
 | `lostcam scan <ip> --plate-mm 220` | Set up: measure the **empty** build plate and save its geometry |
 | `lostcam plate <ip> --plate plate.json` | Live readout of what is on the plate, in millimetres |
+| `lostcam plate <ip> --plate plate.json --web` | The same readout as a page to leave open next to the printer |
 | `lostcam capture <ip> --out dir` | Record an aligned **dataset**: frames + depth + telemetry |
 | `lostcam discover` | Find senders on the LAN |
 | `lostcam devices` | List Android devices visible to `adb` |
@@ -201,6 +202,7 @@ whatever is on it:
 lostcam scan 192.168.1.42 --plate-mm 220 --out plate.json   # plate must be EMPTY
 lostcam plate 192.168.1.42 --plate plate.json               # live readout
 lostcam capture 192.168.1.42 --plate plate.json --out runs/benchy
+lostcam plate 192.168.1.42 --plate plate.json --web         # …and in a browser
 ```
 
 ```
@@ -228,6 +230,12 @@ iPhone samples about every 2.2 mm at working distance, so a 1 mm grid leaves gap
 between measured cells and detects **nothing at all** — the plate reports empty
 with a 60 mm cube sitting on it. `lostcam scan` computes the right cell size and
 warns if you override it with something too fine.
+
+**`--web` leaves it on a screen.** Both `plate` and `capture` will serve the same
+measurements as a live page — top-down heat map with millimetre rulers, the object
+table, a growth trace of the tallest point, and a banner while the nozzle is in
+shot. It binds to localhost only, updates once per depth frame, and never affects
+the recording; `/state.json` is the same payload for scripts.
 
 Setup, accuracy limits and reading the height maps: **[docs/PLATE.md](docs/PLATE.md)**.
 

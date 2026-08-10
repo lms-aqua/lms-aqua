@@ -52,13 +52,16 @@ class _RecordingPipeline:
     def __init__(self, writer: DatasetWriter, analyser: FrameAnalyser,
                  aligner: SampleAligner, depth: DepthHolder,
                  options: CaptureOptions,
-                 mapper: PlateMapper | None = None) -> None:
+                 mapper: PlateMapper | None = None,
+                 on_plate: callable | None = None) -> None:
         self.writer = writer
         self.analyser = analyser
         self.aligner = aligner
         self.depth = depth
         self.options = options
         self.mapper = mapper
+        # Called with each newly measured plate state, for the live dashboard.
+        self.on_plate = on_plate
         self.stats = Stats()
         self.written = 0
         self.skipped = 0
@@ -147,6 +150,14 @@ class _RecordingPipeline:
                 self.last_plate = plate
             if is_new_depth:
                 height_map = self._mapped_height_map
+                # Notify once per measurement, not once per video frame, so the
+                # dashboard updates at the depth rate rather than duplicating.
+                if self.on_plate is not None and plate is not None:
+                    try:
+                        self.on_plate(plate, self._mapped_height_map)
+                    except Exception:
+                        # A dashboard client must never break a recording.
+                        pass
 
         self.writer.write_frame(
             jpeg=jpeg,
@@ -175,7 +186,8 @@ class CaptureSession:
                  analyser: FrameAnalyser, options: CaptureOptions,
                  want_depth: bool = True, want_data: bool = True,
                  channels: list[str] | None = None, hz: int | None = None,
-                 mapper: PlateMapper | None = None) -> None:
+                 mapper: PlateMapper | None = None,
+                 on_plate: callable | None = None) -> None:
         self.source = source
         self.writer = writer
         self.analyser = analyser
@@ -189,7 +201,8 @@ class CaptureSession:
         self.aligner = SampleAligner()
         self.depth_holder = DepthHolder()
         self.pipeline = _RecordingPipeline(writer, analyser, self.aligner,
-                                          self.depth_holder, options, mapper)
+                                          self.depth_holder, options, mapper,
+                                          on_plate=on_plate)
         self.video = Puller(source, self.pipeline)
         self.data: DataPuller | None = None
         self.depth: DepthPuller | None = None

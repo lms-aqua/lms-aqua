@@ -14,6 +14,35 @@ lostcam plate 192.168.1.42 --plate plate.json
 lostcam capture 192.168.1.42 --plate plate.json --out runs/benchy
 ```
 
+## The dashboard
+
+Add `--web` to either `plate` or `capture` and the same measurements are served
+as a page you can leave open on a second screen next to the printer:
+
+```bash
+lostcam plate 192.168.1.42 --plate plate.json --web        # http://127.0.0.1:8770/
+lostcam capture 192.168.1.42 --plate plate.json --out runs/benchy --web 9000
+```
+
+It shows the height map as a top-down heat map with millimetre rulers, every
+tracked object with its measurements, and a growth trace of the tallest point —
+plus a banner whenever the nozzle is in shot or the filter has not settled yet,
+so a number you are watching is never quietly untrustworthy.
+
+Three things worth knowing:
+
+- It binds to **127.0.0.1 only**. Nothing about the plate leaves the machine, and
+  there is no authentication because there is nothing to authenticate to. If you
+  want it on another screen, tunnel it (`ssh -L 8770:127.0.0.1:8770`).
+- Updates are pushed at the **depth rate**, not the video rate — one per new depth
+  frame, so the page shows measurements rather than a video feed.
+- `/state.json` is the same payload as one poll, which makes
+  `curl -s localhost:8770/state.json | jq .tallest_mm` a perfectly good way to
+  wire the plate into a script. `/healthz` returns `ok`.
+
+The dashboard never affects the recording: if the page throws, the port is busy,
+or every tab is closed, `capture` carries on and says so once.
+
 ## What it actually measures
 
 Per object, per frame, all in millimetres:
