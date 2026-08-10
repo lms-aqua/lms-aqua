@@ -665,6 +665,182 @@ def build_height_map(depth_mm: np.ndarray,
     return HeightMap(heights, valid, calibration.cell_mm, int(height.size))
 
 
+# MARK: - Rejecting the moving parts
+
+
+DEFAULT_MEDIAN_FRAMES = 7
+DEFAULT_MOTION_MM = 6.0
+DEFAULT_MIN_OBSERVATIONS = 3
+
+
+@dataclass
+class MovingParts:
+    """What the filter concluded was machinery rather than print."""
+
+    moving_mm2: float = 0.0
+    ceiling_mm2: float = 0.0
+    excluded_mm2: float = 0.0
+    held_cells: int = 0
+    machinery_visible: bool = False
+
+    def as_dict(self) -> dict:
+        return {
+            "moving_mm2": round(self.moving_mm2, 1),
+            "ceiling_mm2": round(self.ceiling_mm2, 1),
+            "excluded_mm2": round(self.excluded_mm2, 1),
+            "held_cells": self.held_cells,
+            "machinery_visible": self.machinery_visible,
+        }
+
+
+class TemporalFilter:
+    """Separates the print from the machinery moving over it.
+
+    The problem this solves: the nozzle, hotend and gantry pass through the
+    camera's view constantly. Geometrically they are indistinguishable from a
+    print — they stand well above the plate — so a single frame reports the
+    hotend as a tall object, and worse, whatever it is standing in front of is
+    occluded and vanishes from the measurements. Both effects are large: a
+    typical hotend assembly is 40–60 mm tall and tens of millimetres wide.
+
+    Three mechanisms, in order of how much work they do:
+
+    **Temporal median.** The nozzle occupies any given cell for a small fraction
+    of a second as it traverses; the print occupies it for the rest of the run.
+    Taking the per-cell median over a short window outvotes the nozzle
+    completely. The window has to be short enough that the print's own growth is
+    not lagged — but growth is millimetres per *minute* against the nozzle's
+    millimetres per *frame*, so about a second of frames separates them cleanly
+    with room to spare.
+
+    **A motion mask.** Cells whose height varies a lot across the window are
+    machinery, not print. This catches what the median cannot: a gantry that
+    lingers, and the boundary cells where a fast-moving part half-covers a cell.
+    Those cells are excluded from objects and reported as ``moving_mm2``, which
+    doubles as "is the machinery in shot right now".
+
+    **A held last-good map.** While a cell is occluded, the last stable value is
+    held rather than treated as absent, so an object's measured footprint and
+    volume do not dip every time the gantry sweeps past it. Held cells are
+    counted so the substitution is never invisible.
+    """
+
+    def __init__(self, window: int = DEFAULT_MEDIAN_FRAMES,
+                 motion_mm: float = DEFAULT_MOTION_MM,
+                 min_observations: int = DEFAULT_MIN_OBSERVATIONS,
+                 max_height_mm: float | None = None,
+                 hold_occluded: bool = True) -> None:
+        if window < 1:
+            raise PlateError("the median window must be at least 1 frame")
+        self.window = window
+        self.motion_mm = motion_mm
+        self.min_observations = max(1, min(min_observations, window))
+        # A ceiling above which nothing can plausibly be a print on this bed.
+        # The gantry rail usually sits far above the tallest possible print.
+        self.max_height_mm = max_height_mm
+        self.hold_occluded = hold_occluded
+
+        self._heights: list[np.ndarray] = []
+        self._valid: list[np.ndarray] = []
+        self._held: np.ndarray | None = None
+        self._held_valid: np.ndarray | None = None
+        self.last_report = MovingParts()
+
+    def reset(self) -> None:
+        self._heights.clear()
+        self._valid.clear()
+        self._held = None
+        self._held_valid = None
+        self.last_report = MovingParts()
+
+    @property
+    def frames_buffered(self) -> int:
+        return len(self._heights)
+
+    @property
+    def ready(self) -> bool:
+        """Whether enough frames have arrived for the median to mean anything."""
+        return len(self._heights) >= self.min_observations
+
+    def push(self, height_map: HeightMap, cell_area_mm2: float) -> HeightMap:
+        """Add a frame and return the filtered map to measure.
+
+        Until the window has filled, the incoming frame is returned largely
+        unfiltered — with the ceiling still applied — because a median over one
+        frame is that frame. ``ready`` says whether the result is trustworthy.
+        """
+        if self._heights and height_map.heights.shape != self._heights[-1].shape:
+            # The grid changed shape, which means a different calibration. The
+            # history describes a different plate and must not be blended in.
+            self.reset()
+
+        self._heights.append(height_map.heights.copy())
+        self._valid.append(height_map.valid.copy())
+        while len(self._heights) > self.window:
+            self._heights.pop(0)
+            self._valid.pop(0)
+
+        stack = np.stack(self._heights)
+        valid_stack = np.stack(self._valid)
+        observations = valid_stack.sum(axis=0)
+
+        # Per-cell median over the frames where the cell was measured. Masked
+        # arrays would be tidier but are markedly slower; NaN + nanmedian with
+        # the all-NaN warning suppressed does the same job.
+        masked = np.where(valid_stack, stack, np.nan)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            median = np.nanmedian(masked, axis=0)
+            spread = np.nanmax(masked, axis=0) - np.nanmin(masked, axis=0)
+        median = np.nan_to_num(median, nan=0.0).astype(np.float32)
+        spread = np.nan_to_num(spread, nan=0.0).astype(np.float32)
+
+        enough = observations >= self.min_observations
+        # A cell needs several observations before its spread means anything: two
+        # samples of a stationary print can differ by sensor noise alone.
+        moving = enough & (spread > self.motion_mm)
+
+        ceiling = np.zeros_like(moving)
+        if self.max_height_mm is not None:
+            ceiling = enough & (median > self.max_height_mm)
+
+        usable = enough & ~moving & ~ceiling
+        heights = np.where(usable, median, 0.0).astype(np.float32)
+        valid = usable.copy()
+
+        held_cells = 0
+        if self.hold_occluded and self._held is not None:
+            # Where this frame has nothing usable but we previously had a stable
+            # reading, hold it. Without this, every gantry sweep carves a hole in
+            # the object and its volume oscillates.
+            assert self._held_valid is not None
+            fill = (~usable) & self._held_valid
+            if fill.any():
+                heights = np.where(fill, self._held, heights).astype(np.float32)
+                valid = valid | fill
+                held_cells = int(fill.sum())
+
+        # Remember the stable readings for the next frame's hold.
+        if self._held is None or self._held.shape != median.shape:
+            self._held = np.zeros_like(median)
+            self._held_valid = np.zeros_like(usable)
+        assert self._held_valid is not None
+        self._held = np.where(usable, median, self._held).astype(np.float32)
+        self._held_valid = self._held_valid | usable
+
+        self.last_report = MovingParts(
+            moving_mm2=float(moving.sum()) * cell_area_mm2,
+            ceiling_mm2=float(ceiling.sum()) * cell_area_mm2,
+            excluded_mm2=float((moving | ceiling).sum()) * cell_area_mm2,
+            held_cells=held_cells,
+            # Machinery in shot is worth surfacing: measurements taken while it
+            # is crossing the plate are the least reliable ones.
+            machinery_visible=bool(moving.any() or ceiling.any()),
+        )
+
+        return HeightMap(heights, valid, height_map.cell_mm, height_map.points_used)
+
+
 # MARK: - Object segmentation
 
 
@@ -798,6 +974,10 @@ class PlateObject:
     # Filled in by the tracker across frames.
     track_id: int | None = None
     age_frames: int = 0
+    # False until the object has been seen for several frames. A single frame of
+    # machinery that slipped through the filter looks exactly like a new object;
+    # persistence is what tells them apart.
+    confirmed: bool = True
 
     def as_dict(self) -> dict:
         document = {
@@ -816,6 +996,7 @@ class PlateObject:
         if self.track_id is not None:
             document["track"] = self.track_id
             document["age_frames"] = self.age_frames
+            document["confirmed"] = self.confirmed
         return document
 
 
@@ -1001,9 +1182,16 @@ class PlateState:
     tallest_mm: float
     total_volume_mm3: float
     object_count: int
+    moving: MovingParts = field(default_factory=MovingParts)
+    settled: bool = True
+
+    @property
+    def confirmed_objects(self) -> list[PlateObject]:
+        """Objects seen for long enough to be more than a passing artefact."""
+        return [item for item in self.objects if item.confirmed]
 
     def as_dict(self) -> dict:
-        return {
+        document = {
             "object_count": self.object_count,
             "occupied_mm2": round(self.occupied_mm2, 1),
             "tallest_mm": round(self.tallest_mm, 2),
@@ -1011,9 +1199,19 @@ class PlateState:
             "map_coverage": round(self.coverage, 4),
             "objects": [item.as_dict() for item in self.objects],
         }
+        # Only present when a filter is running, so a plain capture is unchanged.
+        if self.moving.machinery_visible or self.moving.held_cells:
+            document["machinery"] = self.moving.as_dict()
+        if not self.settled:
+            # The filter has not seen enough frames yet, so these numbers are the
+            # least trustworthy ones in the run. Saying so beats looking certain.
+            document["settled"] = False
+        return document
 
 
-def summarise(height_map: HeightMap, objects: list[PlateObject]) -> PlateState:
+def summarise(height_map: HeightMap, objects: list[PlateObject],
+              moving: MovingParts | None = None,
+              settled: bool = True) -> PlateState:
     return PlateState(
         objects=objects,
         coverage=height_map.coverage,
@@ -1021,25 +1219,61 @@ def summarise(height_map: HeightMap, objects: list[PlateObject]) -> PlateState:
         tallest_mm=float(max((item.height_max_mm for item in objects), default=0.0)),
         total_volume_mm3=float(sum(item.volume_mm3 for item in objects)),
         object_count=len(objects),
+        moving=moving or MovingParts(),
+        settled=settled,
     )
 
 
 class PlateMapper:
-    """Ties it together: depth frame in, measured plate state out."""
+    """Ties it together: depth frame in, measured plate state out.
+
+    Temporal filtering is on by default, because on a real printer the nozzle and
+    gantry are in shot most of the time and unfiltered measurements are dominated
+    by them. Pass ``filter_machinery=False`` for a static scene.
+    """
 
     def __init__(self, calibration: PlateCalibration,
                  threshold_mm: float = DEFAULT_HEIGHT_THRESHOLD_MM,
                  min_footprint_mm2: float = DEFAULT_MIN_FOOTPRINT_MM2,
-                 track: bool = True) -> None:
+                 track: bool = True,
+                 filter_machinery: bool = True,
+                 median_frames: int = DEFAULT_MEDIAN_FRAMES,
+                 motion_mm: float = DEFAULT_MOTION_MM,
+                 max_height_mm: float | None = None,
+                 min_age_frames: int = 3) -> None:
         self.calibration = calibration
         self.threshold_mm = threshold_mm
         self.min_footprint_mm2 = min_footprint_mm2
         self.tracker = ObjectTracker() if track else None
+        self.min_age_frames = max(1, min_age_frames)
+        self.filter = (
+            TemporalFilter(window=median_frames, motion_mm=motion_mm,
+                           max_height_mm=max_height_mm)
+            if filter_machinery else None
+        )
         self.last_height_map: HeightMap | None = None
+        self.last_raw_height_map: HeightMap | None = None
+
+    def reset(self) -> None:
+        if self.filter:
+            self.filter.reset()
 
     def process(self, depth_mm: np.ndarray) -> PlateState:
-        height_map = build_height_map(depth_mm, self.calibration)
+        raw = build_height_map(depth_mm, self.calibration)
+        self.last_raw_height_map = raw
+
+        height_map = raw
+        moving = MovingParts()
+        settled = True
+        if self.filter is not None:
+            height_map = self.filter.push(raw, self.calibration.cell_area_mm2)
+            moving = self.filter.last_report
+            settled = self.filter.ready
+
+        # The filtered map is what gets measured and what gets written to the
+        # dataset, so a recorded height map matches the recorded numbers.
         self.last_height_map = height_map
+
         objects = segment_objects(
             height_map, self.calibration,
             threshold_mm=self.threshold_mm,
@@ -1047,4 +1281,9 @@ class PlateMapper:
         )
         if self.tracker is not None:
             objects = self.tracker.update(objects)
-        return summarise(height_map, objects)
+            for item in objects:
+                item.confirmed = item.age_frames >= self.min_age_frames
+        else:
+            for item in objects:
+                item.confirmed = True
+        return summarise(height_map, objects, moving, settled)

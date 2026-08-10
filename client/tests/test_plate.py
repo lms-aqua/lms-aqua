@@ -24,6 +24,7 @@ from lostcam.plate import (
     PlateError,
     PlateMapper,
     PlateObject,
+    TemporalFilter,
     _dilate,
     _erode,
     build_height_map,
@@ -782,6 +783,259 @@ class TestScanRobustness:
         )
 
 
+class TestMachineryRejection:
+    """The nozzle and gantry pass over the plate constantly.
+
+    Geometrically they look exactly like a tall print, and they occlude whatever
+    is behind them, so both effects have to be handled or every measurement is
+    dominated by the machine rather than the part.
+    """
+
+    PLATE = 200.0
+    PRINT = (0.0, 0.0, 60.0, 60.0, 30.0)   # the actual part, static
+    # A hotend: tall, chunky, and somewhere different each frame.
+    NOZZLE_HEIGHT = 55.0
+
+    def calibration(self, cell_mm=3.0):
+        return calibration_from(render_plate(), plate_mm=self.PLATE, cell_mm=cell_mm)
+
+    def frame(self, nozzle_x=None):
+        boxes = [self.PRINT]
+        if nozzle_x is not None:
+            boxes.append((nozzle_x, 20.0, 18.0, 18.0, self.NOZZLE_HEIGHT))
+        return render_plate(boxes=boxes)
+
+    def run(self, mapper, nozzle_path):
+        states = []
+        for x in nozzle_path:
+            states.append(mapper.process(self.frame(x)))
+        return states
+
+    def test_unfiltered_a_sweeping_nozzle_is_measured_as_an_object(self):
+        """Establishes the problem this exists to solve."""
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=False)
+        states = self.run(mapper, [-60.0, -30.0, 0.0, 30.0, 60.0])
+        # The nozzle is taller than the print, so it dominates the readings.
+        assert max(s.tallest_mm for s in states) > 45, (
+            "expected the unfiltered pipeline to pick up the 55mm nozzle"
+        )
+
+    def test_filtered_measurements_track_the_print_not_the_nozzle(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=7)
+        # The nozzle crosses the plate; the print never moves.
+        states = self.run(mapper, [-70.0, -50.0, -30.0, -10.0, 10.0, 30.0, 50.0, 70.0])
+        settled = [s for s in states if s.settled]
+        assert settled, "the filter never settled"
+
+        tallest = max(s.tallest_mm for s in settled)
+        assert tallest == pytest.approx(30.0, abs=5.0), (
+            f"filtered height {tallest:.1f}mm should be the 30mm print, not the "
+            f"{self.NOZZLE_HEIGHT}mm nozzle"
+        )
+
+    def test_the_print_is_still_found_while_the_nozzle_is_in_shot(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=7)
+        states = self.run(mapper, [-70.0, -50.0, -30.0, -10.0, 10.0, 30.0, 50.0])
+        settled = [s for s in states if s.settled]
+        assert all(s.object_count >= 1 for s in settled), (
+            "the print disappeared while machinery was in view"
+        )
+
+    def test_machinery_is_reported_rather_than_silently_dropped(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=5)
+        states = self.run(mapper, [-60.0, -20.0, 20.0, 60.0, -40.0, 40.0])
+        assert any(s.moving.machinery_visible for s in states), (
+            "a moving nozzle should be reported as machinery in view"
+        )
+        assert any(s.moving.moving_mm2 > 0 for s in states)
+
+    def test_a_static_print_is_not_mistaken_for_machinery(self):
+        """The filter must not eat the thing it is supposed to measure."""
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=5)
+        for _ in range(8):
+            state = mapper.process(self.frame(None))
+        assert state.settled
+        assert state.object_count == 1
+        assert state.tallest_mm == pytest.approx(30.0, abs=4.0)
+        assert state.moving.moving_mm2 == pytest.approx(0.0, abs=1e-6)
+
+    def test_growth_is_still_tracked_through_the_filter(self):
+        """A short median window must not lag a print that is actually growing."""
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=5)
+        heights = []
+        for height in (10.0, 10.0, 10.0, 10.0, 10.0, 10.0,
+                       40.0, 40.0, 40.0, 40.0, 40.0, 40.0):
+            state = mapper.process(
+                render_plate(boxes=[(0.0, 0.0, 60.0, 60.0, height)])
+            )
+            if state.settled:
+                heights.append(state.tallest_mm)
+        assert heights[0] == pytest.approx(10.0, abs=4.0)
+        assert heights[-1] == pytest.approx(40.0, abs=4.0)
+
+    def test_a_height_ceiling_rejects_the_gantry(self):
+        """A gantry rail sits above any possible print, so a ceiling catches it."""
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=3,
+                             max_height_mm=45.0)
+        # A stationary bar 80mm up, spanning the plate — a parked gantry.
+        for _ in range(6):
+            state = mapper.process(render_plate(boxes=[
+                self.PRINT, (0.0, -60.0, 180.0, 16.0, 80.0),
+            ]))
+        assert state.moving.ceiling_mm2 > 0, "the gantry should hit the ceiling"
+        assert state.tallest_mm == pytest.approx(30.0, abs=5.0), (
+            "the 80mm gantry must not be reported as the tallest object"
+        )
+
+    def test_occluded_cells_are_held_rather_than_dropped(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=5)
+        # Establish the print, then park the nozzle right on top of it.
+        for _ in range(6):
+            mapper.process(self.frame(None))
+        for _ in range(3):
+            state = mapper.process(
+                render_plate(boxes=[self.PRINT, (0.0, 0.0, 30.0, 30.0, 55.0)])
+            )
+        # The print's footprint must not collapse just because it was covered.
+        assert state.object_count >= 1
+        assert state.moving.held_cells > 0, "occluded cells should be held"
+
+    def test_new_objects_are_unconfirmed_until_they_persist(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=False, min_age_frames=3)
+        first = mapper.process(self.frame(None))
+        assert first.objects and not first.objects[0].confirmed
+        for _ in range(4):
+            state = mapper.process(self.frame(None))
+        assert state.objects[0].confirmed
+        assert state.confirmed_objects
+
+    def test_unsettled_frames_say_so(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=7)
+        first = mapper.process(self.frame(None))
+        assert not first.settled
+        assert first.as_dict()["settled"] is False
+
+    def test_reset_clears_the_filter_history(self):
+        calibration = self.calibration()
+        mapper = PlateMapper(calibration, filter_machinery=True, median_frames=5)
+        for _ in range(6):
+            mapper.process(self.frame(None))
+        assert mapper.filter is not None and mapper.filter.ready
+        mapper.reset()
+        assert mapper.filter.frames_buffered == 0
+        assert not mapper.filter.ready
+
+
+class TestTemporalFilter:
+    def grid(self, value, shape=(6, 6), valid=True):
+        heights = np.full(shape, float(value), dtype=np.float32)
+        mask = np.full(shape, valid, dtype=bool)
+        return HeightMap(heights, mask, 1.0)
+
+    def test_median_outvotes_a_single_outlier(self):
+        filt = TemporalFilter(window=5, motion_mm=100.0, min_observations=3)
+        for value in (10.0, 10.0, 55.0, 10.0, 10.0):
+            out = filt.push(self.grid(value), 1.0)
+        assert out.heights.max() == pytest.approx(10.0)
+
+    def test_motion_mask_excludes_cells_that_swing(self):
+        filt = TemporalFilter(window=5, motion_mm=5.0, min_observations=3)
+        for value in (10.0, 50.0, 10.0, 50.0, 10.0):
+            out = filt.push(self.grid(value), 1.0)
+        # Every cell swung by 40mm, so nothing is usable this frame.
+        assert not out.valid.any()
+        assert filt.last_report.machinery_visible
+
+    def test_steady_values_are_never_treated_as_motion(self):
+        filt = TemporalFilter(window=5, motion_mm=2.0, min_observations=3)
+        for _ in range(5):
+            out = filt.push(self.grid(12.0), 1.0)
+        assert out.valid.all()
+        assert out.heights.max() == pytest.approx(12.0)
+        assert filt.last_report.moving_mm2 == 0.0
+
+    def test_ceiling_rejects_impossible_heights(self):
+        filt = TemporalFilter(window=3, motion_mm=100.0, min_observations=2,
+                              max_height_mm=40.0)
+        for _ in range(3):
+            out = filt.push(self.grid(90.0), 1.0)
+        assert not out.valid.any()
+        assert filt.last_report.ceiling_mm2 > 0
+
+    def test_ready_only_after_enough_observations(self):
+        filt = TemporalFilter(window=5, min_observations=3)
+        assert not filt.ready
+        filt.push(self.grid(1.0), 1.0)
+        assert not filt.ready
+        filt.push(self.grid(1.0), 1.0)
+        filt.push(self.grid(1.0), 1.0)
+        assert filt.ready
+
+    def test_window_is_bounded(self):
+        filt = TemporalFilter(window=3, min_observations=1)
+        for _ in range(10):
+            filt.push(self.grid(1.0), 1.0)
+        assert filt.frames_buffered == 3
+
+    def test_window_alone_covers_a_single_dropped_frame(self):
+        """One invalid frame needs no holding: the window still has good data."""
+        filt = TemporalFilter(window=3, motion_mm=100.0, min_observations=1)
+        for _ in range(3):
+            filt.push(self.grid(20.0), 1.0)
+        out = filt.push(self.grid(0.0, valid=False), 1.0)
+        assert out.valid.any()
+        assert out.heights.max() == pytest.approx(20.0)
+        assert filt.last_report.held_cells == 0
+
+    def test_held_value_survives_the_window_emptying(self):
+        """Sustained occlusion flushes the window; the last good value is held."""
+        filt = TemporalFilter(window=3, motion_mm=100.0, min_observations=1)
+        for _ in range(3):
+            filt.push(self.grid(20.0), 1.0)
+        for _ in range(3):
+            out = filt.push(self.grid(0.0, valid=False), 1.0)
+        assert out.valid.any(), "the last good reading should be held"
+        assert out.heights.max() == pytest.approx(20.0)
+        assert filt.last_report.held_cells > 0
+
+    def test_holding_can_be_disabled(self):
+        filt = TemporalFilter(window=3, motion_mm=100.0, min_observations=1,
+                              hold_occluded=False)
+        for _ in range(3):
+            filt.push(self.grid(20.0), 1.0)
+        for _ in range(3):
+            out = filt.push(self.grid(0.0, valid=False), 1.0)
+        assert not out.valid.any()
+
+    def test_a_changed_grid_shape_resets_rather_than_blending(self):
+        """A different calibration describes a different plate."""
+        filt = TemporalFilter(window=5, min_observations=1)
+        for _ in range(3):
+            filt.push(self.grid(10.0, shape=(6, 6)), 1.0)
+        out = filt.push(self.grid(20.0, shape=(8, 8)), 1.0)
+        assert out.heights.shape == (8, 8)
+        assert filt.frames_buffered == 1
+
+    def test_zero_window_is_rejected(self):
+        with pytest.raises(PlateError, match="at least 1"):
+            TemporalFilter(window=0)
+
+    def test_report_is_json_serialisable(self):
+        filt = TemporalFilter(window=3, min_observations=1)
+        filt.push(self.grid(5.0), 1.0)
+        json.dumps(filt.last_report.as_dict())
+
+
 class TestObjectTracker:
     def make(self, object_id: int, u: float, v: float,
              height: float = 20.0) -> PlateObject:
@@ -850,9 +1104,17 @@ class TestObjectTracker:
 
 
 class TestPlateMapper:
+    def warm(self, mapper, depth, frames: int = 8):
+        """Feed the same frame until the machinery filter has settled."""
+        state = None
+        for _ in range(frames):
+            state = mapper.process(depth)
+        assert state is not None and state.settled
+        return state
+
     def test_reports_an_empty_plate_as_empty(self):
         calibration = calibration_from(render_plate())
-        state = PlateMapper(calibration).process(render_plate())
+        state = self.warm(PlateMapper(calibration), render_plate())
         assert state.object_count == 0
         assert state.tallest_mm == 0.0
         assert state.total_volume_mm3 == 0.0
@@ -864,7 +1126,9 @@ class TestPlateMapper:
         heights = []
         for height in (10.0, 25.0, 45.0):
             depth = render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, height)])
-            state = mapper.process(depth)
+            # Settle on each height: the filter needs several frames of a value
+            # before it will trust it, which is exactly how it rejects a nozzle.
+            state = self.warm(mapper, depth)
             assert state.object_count == 1
             heights.append(state.tallest_mm)
 
@@ -877,16 +1141,17 @@ class TestPlateMapper:
         mapper = PlateMapper(calibration)
         ids = []
         for height in (10.0, 20.0, 30.0):
-            state = mapper.process(
-                render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, height)])
+            state = self.warm(
+                mapper, render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, height)])
             )
             ids.append(state.objects[0].track_id)
         assert len(set(ids)) == 1, f"track id changed across frames: {ids}"
 
     def test_summary_dict_is_json_serialisable(self):
         calibration = calibration_from(render_plate(), cell_mm=2.0)
-        state = PlateMapper(calibration).process(
-            render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, 30.0)])
+        state = self.warm(
+            PlateMapper(calibration),
+            render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, 30.0)]),
         )
         document = state.as_dict()
         json.dumps(document)  # must not raise
@@ -914,5 +1179,5 @@ class TestPlateMapper:
     def test_tracking_can_be_disabled(self):
         calibration = calibration_from(render_plate(), cell_mm=2.0)
         mapper = PlateMapper(calibration, track=False)
-        state = mapper.process(render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, 30.0)]))
+        state = self.warm(mapper, render_plate(boxes=[(0.0, 0.0, 40.0, 40.0, 30.0)]))
         assert state.objects[0].track_id is None

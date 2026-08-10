@@ -47,16 +47,45 @@ class SampleEncoderTest {
 
     @Test
     fun `attitude carries quaternion scalar last plus euler`() {
+        // A properly normalised 90° rotation about y. The truncated literal
+        // 0.7071 is NOT normalised and yields yaw 89.685°, which is what made
+        // this test fail in CI while passing a casual eyeball.
+        val half = Math.toRadians(90.0) / 2.0
+        val component = Math.sin(half)
         val record = decode(
             encoder().encode(
-                SensorSample.Attitude(0.0, 0.7071, 0.0, 0.7071, "magnetic", "high"),
+                SensorSample.Attitude(
+                    0.0, component, 0.0, Math.cos(half), "magnetic", "high",
+                ),
             ),
         )
         val quaternion = record.getJSONArray("q")
         assertEquals(4, quaternion.length())
-        assertEquals(0.7071, quaternion.getDouble(3), 1e-4)
-        assertEquals(90.0, record.getJSONArray("euler").getDouble(1), 0.1)
+        // Scalar last, per the spec.
+        assertEquals(Math.cos(half), quaternion.getDouble(3), 1e-5)
+        assertEquals(90.0, record.getJSONArray("euler").getDouble(1), 0.01)
         assertEquals("magnetic", record.getString("ref"))
+    }
+
+    @Test
+    fun `gimbal lock resolves the same way as the other senders`() {
+        // At yaw = 90 the convention is roll = 0 with the remainder in pitch, so
+        // an iOS and an Android stream describe the same rotation identically.
+        val half = Math.toRadians(90.0) / 2.0
+        val angles = Maths.euler(0.0, Math.sin(half), 0.0, Math.cos(half))
+        assertEquals(0.0, angles[0], 1e-6)   // pitch
+        assertEquals(90.0, angles[1], 1e-3)  // yaw
+        assertEquals(0.0, angles[2], 1e-12)  // roll, defined as zero
+    }
+
+    @Test
+    fun `gimbal lock is stable either side of the degenerate term`() {
+        // 1 - 2(x^2 + y^2) straddles zero depending on the platform's sin.
+        for (y in listOf(0.7071067811865475, 0.7071067811865476)) {
+            val angles = Maths.euler(0.0, y, 0.0, y)
+            assertEquals(0.0, angles[0], 1e-6)
+            assertEquals(90.0, angles[1], 1e-3)
+        }
     }
 
     @Test

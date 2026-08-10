@@ -15,7 +15,10 @@ on:
 jobs:
   build:
     name: Test and build an unsigned IPA
-    runs-on: macos-14
+    # macos-15 ships Xcode 16, which can read the project format current XcodeGen
+    # emits. On macos-14 (Xcode 15.4) the generated project failed to open at all:
+    # "in a future Xcode project file format (77)".
+    runs-on: macos-15
 
     defaults:
       run:
@@ -24,8 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show the toolchain
+      - name: Select the newest Xcode
+        # Belt and braces. XcodeGen tracks the latest Xcode's project format, so
+        # pinning the *runner* is not enough on its own — an image that ships
+        # several Xcodes may default to an older one. Take the newest present.
         run: |
+          set -euo pipefail
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then
+            echo "Selecting $NEWEST"
+            sudo xcode-select -s "$NEWEST"
+          fi
           xcodebuild -version
           swift --version
 
@@ -34,8 +46,20 @@ jobs:
         # there is nothing to drift and no pbxproj merge conflicts.
         run: brew install xcodegen
 
-      - name: Generate the Xcode project
-        run: xcodegen generate --spec project.yml
+      - name: Check the generated project is readable by this Xcode
+        # Fail here with a clear message rather than inside `xcodebuild test`,
+        # where the cause is buried in a build-settings dump.
+        run: |
+          set -euo pipefail
+          xcodegen generate --spec project.yml
+          if ! xcodebuild -project LostCam.xcodeproj -list > /dev/null 2>&1; then
+            echo "::error::Xcode $(xcodebuild -version | head -1) cannot read the" \
+                 "project XcodeGen produced. Bump the runner image, or pin" \
+                 "xcodegen to a version matching this Xcode."
+            xcodebuild -project LostCam.xcodeproj -list || true
+            exit 1
+          fi
+          xcodebuild -project LostCam.xcodeproj -list
 
       - name: Pick a simulator
         id: simulator

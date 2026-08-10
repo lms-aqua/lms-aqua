@@ -36,22 +36,47 @@ DEPTH_BOUNDARY = "lostcamdepth"
 MOCK_PLATE_MM = 400
 
 
-def synth_depth(width: int, height: int, phase: float) -> np.ndarray:
-    """A synthetic depth raster: a flat plate with something growing on it.
+MOCK_NOZZLE_MM = 55  # height above the plate of the mock hotend
 
-    Shaped like what a printer rig actually sees, so the height maths and the
-    zero-means-no-measurement handling are exercised rather than assumed.
+
+def synth_depth(width: int, height: int, phase: float,
+                nozzle: bool = True) -> np.ndarray:
+    """A synthetic depth raster shaped like what a printer rig really sees.
+
+    Three things, each of which the consumer has to handle correctly:
+
+    * A **slowly growing print** in the middle. Growth is deliberately slow — a
+      couple of millimetres per second — because that is the rate a real print
+      grows at, and because the whole basis of rejecting machinery is that the
+      machine moves orders of magnitude faster than the part. A mock whose print
+      shot up 40 mm per second would be correctly classified as machinery, and
+      would have made this a test of nothing.
+    * A **moving nozzle**, taller than the print and somewhere different each
+      frame, so the machinery filter is exercised rather than assumed.
+    * A **border of zeros**, because real sensors return nothing at grazing
+      angles and a consumer that treats 0 as a distance produces nonsense.
     """
     raster = np.full((height, width), MOCK_PLATE_MM, dtype=np.uint16)
 
-    # A block in the middle that rises over time — the "print".
-    growth = int(10 + 40 * abs(math.sin(phase)))
+    # The print: rises steadily and monotonically, capped so it stays plausible.
+    growth = int(min(45, 5 + phase * 2.0))
     box_h, box_w = max(1, height // 3), max(1, width // 3)
     top, left = (height - box_h) // 2, (width - box_w) // 2
     raster[top : top + box_h, left : left + box_w] = MOCK_PLATE_MM - growth
 
-    # A border of zeros: real sensors return nothing at grazing angles, and a
-    # consumer that treats 0 as a distance will produce nonsense here.
+    if nozzle:
+        # A hotend sweeping across the bed: small, tall, and never in the same
+        # place twice.
+        nozzle_w = max(2, width // 10)
+        nozzle_h = max(2, height // 10)
+        span = max(1, width - nozzle_w - 2)
+        nozzle_left = 1 + int((0.5 + 0.5 * math.sin(phase * 3.0)) * span)
+        nozzle_top = max(1, top - nozzle_h - 1)
+        raster[
+            nozzle_top : nozzle_top + nozzle_h,
+            nozzle_left : nozzle_left + nozzle_w,
+        ] = MOCK_PLATE_MM - MOCK_NOZZLE_MM
+
     raster[0, :] = 0
     raster[-1, :] = 0
     raster[:, 0] = 0
@@ -194,11 +219,16 @@ class MockSender:
         depth: bool = True,
         depth_size: tuple[int, int] = (64, 48),
         depth_fps: int = 10,
+        nozzle: bool = True,
     ) -> None:
         self.depth = depth
         self.depth_size = depth_size
         self.depth_fps = depth_fps
         self.depth_served = 0
+        # A moving hotend in the depth stream by default, because a mock without
+        # one lets a consumer look correct while being unable to cope with the
+        # single most common obstruction on a real printer.
+        self.nozzle = nozzle
         self.port = port
         self.host = host
         self.width = width
@@ -457,7 +487,8 @@ def _make_handler(sender: MockSender) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 while True:
-                    raster = synth_depth(width, height, phase)
+                    raster = synth_depth(width, height, phase,
+                                         nozzle=sender.nozzle)
                     payload = raster.astype("<u2").tobytes()
                     header = (
                         f"--{DEPTH_BOUNDARY}\r\n"

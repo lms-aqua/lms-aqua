@@ -213,6 +213,34 @@ final class MathsTests: XCTestCase {
         XCTAssertFalse(angles.roll.isNaN)
     }
 
+    func testGimbalLockResolvesToTheSharedConvention() {
+        // At yaw = ±90 only pitch+roll is determined, so the convention is
+        // pinned: roll is 0 and the remainder goes into pitch. The desktop
+        // client and the Android sender must produce the same numbers.
+        let half = (Double.pi / 2) / 2
+        let angles = Maths.euler(x: 0, y: sin(half), z: 0, w: cos(half))
+        XCTAssertEqual(angles.pitch, 0, accuracy: 1e-6)
+        XCTAssertEqual(angles.yaw, 90, accuracy: 1e-3)
+        XCTAssertEqual(angles.roll, 0, accuracy: 1e-12)
+    }
+
+    func testGimbalLockIsStableEitherSideOfTheDegenerateTerm() {
+        // 1 - 2(x² + y²) straddles zero depending on the platform's sin, which
+        // is what made the equivalent Python test pass on Linux and fail on
+        // Windows.
+        for value in [0.7071067811865475, 0.7071067811865476] {
+            let angles = Maths.euler(x: 0, y: value, z: 0, w: value)
+            XCTAssertEqual(angles.pitch, 0, accuracy: 1e-6)
+            XCTAssertEqual(angles.yaw, 90, accuracy: 1e-3)
+        }
+    }
+
+    func testJustBelowThePoleUsesTheGeneralFormula() {
+        let half = (80.0 * Double.pi / 180.0) / 2
+        let angles = Maths.euler(x: 0, y: sin(half), z: 0, w: cos(half))
+        XCTAssertEqual(angles.yaw, 80, accuracy: 1e-3)
+    }
+
     func testDepthConversionToMillimetres() {
         XCTAssertEqual(Maths.depthMillimetres(metres: 1.0), 1000)
         XCTAssertEqual(Maths.depthMillimetres(metres: 0.2345), 234)

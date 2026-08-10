@@ -152,3 +152,52 @@ that is not there.
   drifts toward the middle of *everything* flat — heights stay correct, but
   positions are offset. The scan warns when the visible plane is much larger than
   the configured plate; crop the view to the bed for positions you can trust.
+
+## The nozzle and gantry
+
+The hotend and gantry pass through the camera's view constantly, and
+geometrically they are indistinguishable from a print: a typical hotend assembly
+stands 40–60 mm above the bed. Unfiltered, it *is* the tallest object in almost
+every frame, and worse, whatever it stands in front of is occluded and vanishes
+from the measurements.
+
+Measured against the mock printer, with a 55 mm hotend sweeping over a print
+growing slowly from 5 mm:
+
+| | Tallest reported | Objects | Machinery reported |
+| --- | --- | --- | --- |
+| `--no-machinery-filter` | **54.4 mm** — the nozzle | 1–2 | never |
+| default | **7.4 mm** — the print | always 1 | every frame |
+
+Three mechanisms do the work, and they are on by default:
+
+**A temporal median.** The nozzle occupies any given cell for a fraction of a
+second as it traverses; the print occupies it for the rest of the run. A per-cell
+median over `--median-frames` (default 7) outvotes the nozzle entirely. The
+window is short deliberately: a print grows millimetres per *minute* while the
+nozzle moves millimetres per *frame*, so about a second of frames separates them
+with room to spare and without lagging real growth.
+
+**A motion mask.** Cells whose height varies by more than `--motion-mm`
+(default 6) across the window are machinery, not print. This catches what the
+median cannot — a gantry that lingers, and the boundary cells where a fast part
+half-covers a cell. Those cells are excluded and reported as `moving_mm2`, which
+doubles as "is the machine in shot right now".
+
+**A held last-good map.** While a cell is occluded, its last stable value is held
+rather than treated as absent, so an object's footprint and volume do not dip
+every time the gantry sweeps past. Held cells are counted in `held_cells`, so the
+substitution is never invisible.
+
+For a gantry rail parked above the bed, add `--max-height-mm` a little above your
+tallest plausible print — anything above the ceiling is rejected outright and
+counted in `ceiling_mm2`.
+
+Two fields exist because of all this and are worth filtering on:
+
+- **`settled: false`** on a frame means the filter has not seen enough depth
+  frames yet. Those are the least trustworthy measurements in the run.
+- **`confirmed: false`** on an object means it has been seen for fewer than
+  `--min-age-frames` (default 3) observations. A single frame of machinery that
+  slipped through looks exactly like a new object; persistence is what separates
+  them. For training, prefer `confirmed` objects on `settled` frames.

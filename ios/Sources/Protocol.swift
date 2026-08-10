@@ -304,23 +304,42 @@ struct JSONWriter {
 // MARK: - Maths
 
 enum Maths {
+    /// Above this |sin(yaw)| the rotation is at gimbal lock and pitch/roll are no
+    /// longer independently determined.
+    static let gimbalLockThreshold = 0.99999
+
     /// Quaternion (x, y, z, w) to (pitch, yaw, roll) in degrees.
     ///
-    /// Clamped at the poles so straight up yields 90 rather than a NaN, which
-    /// would poison every downstream consumer.
+    /// **Gimbal lock is handled explicitly.** At yaw = ±90° only the *sum* of
+    /// pitch and roll is determined, and the naive formula computes
+    /// `atan2(0, 1 - 2(x² + y²))` whose second argument lands on either side of
+    /// zero depending on the platform's `sin` — 0° on one machine and 180° on
+    /// another for identical input. Both are valid, which is the problem.
+    ///
+    /// So at the pole roll is defined as 0 and the remaining rotation goes into
+    /// pitch. The desktop client and the Android sender implement the same rule,
+    /// which is the point: three implementations that must agree.
     static func euler(x: Double, y: Double, z: Double, w: Double)
         -> (pitch: Double, yaw: Double, roll: Double) {
-        let sinPitch = 2.0 * (w * x + y * z)
-        let cosPitch = 1.0 - 2.0 * (x * x + y * y)
-        let pitch = atan2(sinPitch, cosPitch)
-
-        var sinYaw = 2.0 * (w * y - z * x)
-        sinYaw = Swift.max(-1.0, Swift.min(1.0, sinYaw))
+        // Clamp before asin: a denormalised quaternion would otherwise yield NaN.
+        let sinYaw = Swift.max(-1.0, Swift.min(1.0, 2.0 * (w * y - z * x)))
         let yaw = asin(sinYaw)
 
-        let sinRoll = 2.0 * (w * z + x * y)
-        let cosRoll = 1.0 - 2.0 * (y * y + z * z)
-        let roll = atan2(sinRoll, cosRoll)
+        var pitch: Double
+        var roll: Double
+        if abs(sinYaw) >= gimbalLockThreshold {
+            pitch = 2.0 * atan2(x, w)
+            // Keep pitch in (-180, 180] rather than wrapping to ±360.
+            if pitch > Double.pi {
+                pitch -= 2.0 * Double.pi
+            } else if pitch < -Double.pi {
+                pitch += 2.0 * Double.pi
+            }
+            roll = 0.0
+        } else {
+            pitch = atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+            roll = atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        }
 
         let toDegrees = 180.0 / Double.pi
         return (pitch * toDegrees, yaw * toDegrees, roll * toDegrees)

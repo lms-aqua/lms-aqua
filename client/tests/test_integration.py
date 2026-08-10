@@ -641,12 +641,31 @@ class TestPlateMappingInCapture:
         records = read_manifest(tmp_path / "ds")
         with_plate = [r for r in records if r.get("plate")]
         assert with_plate, "no plate measurements were attached"
-        # The mock's synthetic print is a raised block, so it must be detected.
-        assert any(r["plate"]["object_count"] >= 1 for r in with_plate), (
+
+        # Only settled frames are meaningful: the machinery filter needs several
+        # depth frames before it can tell a print from a passing nozzle.
+        settled = [r for r in with_plate if r["plate"].get("settled") is not False]
+        assert settled, "the machinery filter never settled during the capture"
+
+        assert any(r["plate"]["object_count"] >= 1 for r in settled), (
             "the synthetic print on the plate was never detected"
         )
-        tallest = max(r["plate"]["tallest_mm"] for r in with_plate)
+        tallest = max(r["plate"]["tallest_mm"] for r in settled)
         assert tallest > 5, f"tallest object measured only {tallest}mm"
+
+        # The mock also sweeps a 55mm hotend across the bed. If it were being
+        # measured as the print, the height would sit near 55 rather than near
+        # the print's own slowly growing height.
+        from lostcam.mocksender import MOCK_NOZZLE_MM
+
+        assert tallest < MOCK_NOZZLE_MM - 5, (
+            f"tallest measured {tallest}mm, close to the {MOCK_NOZZLE_MM}mm mock "
+            f"nozzle — the machinery filter is not rejecting it"
+        )
+        # And the machinery should be reported rather than silently discarded.
+        assert any(r["plate"].get("machinery") for r in settled), (
+            "the moving nozzle was never reported as machinery"
+        )
 
 
 class TestSynthSamples:

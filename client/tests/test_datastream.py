@@ -182,10 +182,53 @@ class TestQuaternionToEuler:
         assert (pitch, yaw, roll) == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)
 
     def test_90_degrees_about_y_is_yaw(self):
+        """A 90° yaw is exactly gimbal lock, so the convention is pinned.
+
+        This test previously passed on Linux and failed on Windows: pitch is
+        mathematically ambiguous here, and the naive formula returned 0° or 180°
+        depending on the platform's ``sin``. The implementation now defines roll
+        as 0 and folds the remainder into pitch, which for this rotation gives 0.
+        """
         half = math.radians(90) / 2
         pitch, yaw, roll = quaternion_to_euler([0, math.sin(half), 0, math.cos(half)])
         assert yaw == pytest.approx(90.0, abs=1e-4)
         assert pitch == pytest.approx(0.0, abs=1e-4)
+        assert roll == pytest.approx(0.0, abs=1e-9)
+
+    def test_gimbal_lock_is_deterministic_either_side_of_zero(self):
+        """The exact case that differed between Linux and Windows.
+
+        ``1 - 2(x² + y²)`` lands on either side of zero depending on the last bit
+        of ``sin``. Both signs must produce the same answer.
+        """
+        import math as m
+
+        for y in (m.sin(m.radians(45)), 0.7071067811865475, 0.7071067811865476):
+            pitch, yaw, roll = quaternion_to_euler([0.0, y, 0.0, y])
+            assert yaw == pytest.approx(90.0, abs=1e-3), f"y={y!r}"
+            assert pitch == pytest.approx(0.0, abs=1e-6), f"y={y!r} gave pitch={pitch}"
+            assert roll == 0.0
+
+    def test_negative_pole_is_also_deterministic(self):
+        half = math.radians(-90) / 2
+        pitch, yaw, roll = quaternion_to_euler([0, math.sin(half), 0, math.cos(half)])
+        assert yaw == pytest.approx(-90.0, abs=1e-3)
+        assert pitch == pytest.approx(0.0, abs=1e-6)
+        assert roll == 0.0
+
+    def test_denormalised_quaternion_near_the_pole_does_not_nan(self):
+        # A slightly over-unit quaternion would push asin past 1.
+        for value in (0.7072, 0.71, 0.75):
+            pitch, yaw, roll = quaternion_to_euler([0.0, value, 0.0, value])
+            for angle in (pitch, yaw, roll):
+                assert not math.isnan(angle), f"NaN for {value}"
+
+    def test_just_below_the_pole_still_uses_the_general_formula(self):
+        """A rotation near but not at the pole must not be snapped to the pole."""
+        # 80° yaw: sin(yaw) = 0.985, below the threshold.
+        half = math.radians(80) / 2
+        _, yaw, _ = quaternion_to_euler([0, math.sin(half), 0, math.cos(half)])
+        assert yaw == pytest.approx(80.0, abs=1e-3)
 
     def test_90_degrees_about_x_is_pitch(self):
         half = math.radians(90) / 2

@@ -177,6 +177,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--seconds", type=float, help="stop after this long (default: until Ctrl-C)"
     )
 
+
+    def add_machinery_flags(sub: argparse.ArgumentParser) -> None:
+        """Controls for rejecting the nozzle, hotend and gantry."""
+        sub.add_argument(
+            "--no-machinery-filter", action="store_true",
+            help="do not reject moving machinery. The nozzle and gantry will then "
+                 "be measured as objects and will occlude the print",
+        )
+        sub.add_argument(
+            "--median-frames", type=int, default=7, metavar="N",
+            help="depth frames to take a per-cell median over (default 7). The "
+                 "nozzle crosses a cell in a fraction of that, so it gets "
+                 "outvoted; the print does not move and survives",
+        )
+        sub.add_argument(
+            "--motion-mm", type=float, default=6.0, metavar="MM",
+            help="cells varying by more than this across the window are treated "
+                 "as machinery, not print (default 6)",
+        )
+        sub.add_argument(
+            "--max-height-mm", type=float, metavar="MM",
+            help="ignore anything taller than this — a gantry rail sits above any "
+                 "possible print, so a ceiling catches it",
+        )
+        sub.add_argument(
+            "--min-age-frames", type=int, default=3, metavar="N",
+            help="observations before an object is marked confirmed (default 3)",
+        )
+
     scan = subparsers.add_parser(
         "scan",
         help="set up: look at an EMPTY build plate and save its geometry",
@@ -226,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plate.add_argument("--json", action="store_true", help="emit NDJSON, not a table")
     plate.add_argument("--seconds", type=float, help="stop after this long")
+    add_machinery_flags(plate)
 
     capture = subparsers.add_parser(
         "capture",
@@ -298,6 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-height-maps", action="store_true",
         help="measure objects but do not save the per-frame height-map rasters",
     )
+    add_machinery_flags(capture)
 
     subparsers.add_parser("discover", help="find LostCam senders on the network")
     subparsers.add_parser("devices", help="list Android devices visible to adb")
@@ -855,6 +886,21 @@ def _split_host_port(value: str, default_port: int) -> tuple[str, int]:
 # -- plate scanning and mapping ----------------------------------------------
 
 
+def _build_mapper(calibration: PlateCalibration,
+                  args: argparse.Namespace) -> PlateMapper:
+    """Assemble a PlateMapper from the machinery-filter flags."""
+    return PlateMapper(
+        calibration,
+        threshold_mm=args.threshold_mm,
+        min_footprint_mm2=args.min_mm2,
+        filter_machinery=not args.no_machinery_filter,
+        median_frames=max(1, args.median_frames),
+        motion_mm=args.motion_mm,
+        max_height_mm=args.max_height_mm,
+        min_age_frames=max(1, args.min_age_frames),
+    )
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     source = Source(host=args.host, port=args.port, token=args.token)
 
@@ -913,8 +959,7 @@ def cmd_plate(args: argparse.Namespace) -> int:
         return 2
 
     source = Source(host=args.host, port=args.port, token=args.token)
-    mapper = PlateMapper(calibration, threshold_mm=args.threshold_mm,
-                         min_footprint_mm2=args.min_mm2)
+    mapper = _build_mapper(calibration, args)
     puller = DepthPuller(source.host, source.port, token=source.token)
 
     if not args.json:
@@ -1062,8 +1107,7 @@ def cmd_capture(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        mapper = PlateMapper(plate_calibration, threshold_mm=args.threshold_mm,
-                             min_footprint_mm2=args.min_mm2)
+        mapper = _build_mapper(plate_calibration, args)
         print(f"Plate mapping: {plate_calibration.plate_width_mm:.0f}x"
               f"{plate_calibration.plate_height_mm:.0f} mm at "
               f"{plate_calibration.cell_mm:g} mm/cell, "

@@ -261,28 +261,54 @@ class DataPuller:
 # -- small maths helpers consumers keep needing ------------------------------
 
 
+#: Above this |sin(yaw)| the rotation is at gimbal lock and pitch/roll are no
+#: longer independently determined. 0.99999 corresponds to about 0.26° from the
+#: pole, comfortably outside sensor noise but inside where the maths degenerates.
+GIMBAL_LOCK_THRESHOLD = 0.99999
+
+
 def quaternion_to_euler(q: list[float]) -> tuple[float, float, float]:
     """``[x,y,z,w]`` to ``(pitch, yaw, roll)`` in degrees.
 
-    Present because senders may omit ``euler`` and because doing this wrong is
-    a rite of passage. Gimbal lock is clamped rather than allowed to produce a
-    NaN.
+    Present because senders may omit ``euler`` and because doing this wrong is a
+    rite of passage.
+
+    **Gimbal lock is handled explicitly, and it has to be.** At yaw = ±90° only
+    the *sum* of pitch and roll is determined — infinitely many (pitch, roll)
+    pairs describe the same rotation. The naive formula computes
+    ``atan2(0, 1 - 2(x² + y²))``, whose second argument lands on either side of
+    zero depending on the platform's ``sin``: measured as ``0.0`` on Linux and
+    ``-2.2e-16`` on Windows, giving 0° and 180° for the identical input. Both are
+    correct, which is precisely the problem — a sender and a consumer on
+    different machines would disagree.
+
+    So at the pole the convention is pinned: roll is defined as 0 and the whole
+    remaining rotation goes into pitch. That is the standard resolution, it is
+    deterministic across platforms, and the iOS and Android senders implement the
+    same rule so all three agree byte for byte.
     """
     if len(q) != 4:
         raise ValueError("quaternion must have 4 components [x,y,z,w]")
     x, y, z, w = (float(v) for v in q)
 
-    sin_pitch = 2.0 * (w * x + y * z)
-    cos_pitch = 1.0 - 2.0 * (x * x + y * y)
-    pitch = math.atan2(sin_pitch, cos_pitch)
-
     sin_yaw = 2.0 * (w * y - z * x)
-    sin_yaw = max(-1.0, min(1.0, sin_yaw))  # clamp instead of NaN at the poles
+    # Clamp before asin: a denormalised quaternion can push this past 1 and
+    # produce a NaN that then poisons every downstream consumer.
+    sin_yaw = max(-1.0, min(1.0, sin_yaw))
     yaw = math.asin(sin_yaw)
 
-    sin_roll = 2.0 * (w * z + x * y)
-    cos_roll = 1.0 - 2.0 * (y * y + z * z)
-    roll = math.atan2(sin_roll, cos_roll)
+    if abs(sin_yaw) >= GIMBAL_LOCK_THRESHOLD:
+        # At the pole, fold everything into pitch and define roll as zero.
+        pitch = 2.0 * math.atan2(x, w)
+        # Keep pitch in (-180, 180] rather than letting it wrap to ±360.
+        if pitch > math.pi:
+            pitch -= 2.0 * math.pi
+        elif pitch < -math.pi:
+            pitch += 2.0 * math.pi
+        roll = 0.0
+    else:
+        pitch = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+        roll = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
     return (math.degrees(pitch), math.degrees(yaw), math.degrees(roll))
 

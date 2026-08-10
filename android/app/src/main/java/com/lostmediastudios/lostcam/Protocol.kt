@@ -309,22 +309,44 @@ class JsonWriter {
 /** Maths shared with the iOS implementation, kept identical on purpose. */
 object Maths {
     /**
+     * Above this |sin(yaw)| the rotation is at gimbal lock and pitch/roll are no
+     * longer independently determined.
+     */
+    const val GIMBAL_LOCK_THRESHOLD = 0.99999
+
+    /**
      * Quaternion (x, y, z, w) to (pitch, yaw, roll) in degrees.
      *
-     * Clamped at the poles so straight up yields 90 rather than NaN, which would
-     * poison every downstream consumer.
+     * **Gimbal lock is handled explicitly.** At yaw = ±90° only the *sum* of
+     * pitch and roll is determined, and the naive formula computes
+     * `atan2(0, 1 - 2(x² + y²))` whose second argument falls on either side of
+     * zero depending on the platform's `sin` — giving 0° on one machine and 180°
+     * on another for identical input. Both are valid, which is exactly why it
+     * cannot be left to chance.
+     *
+     * At the pole, roll is defined as 0 and the remaining rotation goes into
+     * pitch. The desktop client and the iOS sender implement the same rule.
      */
     fun euler(x: Double, y: Double, z: Double, w: Double): DoubleArray {
-        val sinPitch = 2.0 * (w * x + y * z)
-        val cosPitch = 1.0 - 2.0 * (x * x + y * y)
-        val pitch = atan2(sinPitch, cosPitch)
-
+        // Clamp before asin: a denormalised quaternion would otherwise yield NaN.
         val sinYaw = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
         val yaw = asin(sinYaw)
 
-        val sinRoll = 2.0 * (w * z + x * y)
-        val cosRoll = 1.0 - 2.0 * (y * y + z * z)
-        val roll = atan2(sinRoll, cosRoll)
+        var pitch: Double
+        val roll: Double
+        if (abs(sinYaw) >= GIMBAL_LOCK_THRESHOLD) {
+            pitch = 2.0 * atan2(x, w)
+            // Keep pitch in (-180, 180] rather than wrapping to ±360.
+            if (pitch > Math.PI) {
+                pitch -= 2.0 * Math.PI
+            } else if (pitch < -Math.PI) {
+                pitch += 2.0 * Math.PI
+            }
+            roll = 0.0
+        } else {
+            pitch = atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+            roll = atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        }
 
         val toDegrees = 180.0 / Math.PI
         return doubleArrayOf(pitch * toDegrees, yaw * toDegrees, roll * toDegrees)
